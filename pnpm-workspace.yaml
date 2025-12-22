@@ -1,0 +1,5 @@
+packages:
+  # All applications live in the apps folder.
+  - "apps/*"
+  # Add shared packages here if you create them later.
+  #- "packages/*"

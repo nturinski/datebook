@@ -1,0 +1,17 @@
+{
+  // Base TypeScript configuration shared across the monorepo. Each project can extend this file.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // Allow importing JSON files directly.
+    "resolveJsonModule": true,
+    // Be strict with type checking.
+    "strict": true,
+    // Skip type checking of declaration files for faster builds.
+    "skipLibCheck": true,
+    // Enable interoperability with CommonJS modules.
+    "esModuleInterop": true
+  }
+}

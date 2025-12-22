@@ -1,0 +1,14 @@
+{
+  "name": "datebook",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "pnpm -r --if-present dev",
+    "dev:mobile": "pnpm --filter @datebook/mobile dev",
+    "dev:functions": "pnpm --filter @datebook/functions dev",
+    "build": "pnpm -r --if-present build",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck"
+  }
+}

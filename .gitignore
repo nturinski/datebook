@@ -1,0 +1,18 @@
+# deps / build
+node_modules/
+dist/
+.tmp/
+*.log
+
+# env / secrets
+.env
+.env.*
+apps/**/local.settings.json
+
+# expo
+.expo/
+.expo-shared/
+
+# OS/editor
+.DS_Store
+.vscode/
