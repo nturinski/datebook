@@ -4,10 +4,12 @@ dist/
 .tmp/
 *.log
 
-# env / secrets
+# Secrets / local settings
+apps/**/local.settings.json
+apps/**/.env
+apps/**/.env.*
 .env
 .env.*
-apps/**/local.settings.json
 
 # expo
 .expo/
@@ -16,3 +18,11 @@ apps/**/local.settings.json
 # OS/editor
 .DS_Store
 .vscode/
+
+# Azurite (local storage emulator) state
+__azurite_db_*.json
+__blobstorage__/
+__queuestorage__/
+__tablestorage__/
+
+
