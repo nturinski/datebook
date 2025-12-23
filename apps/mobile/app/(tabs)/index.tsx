@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { Platform, Pressable, StyleSheet } from 'react-native';
+import { Button, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useEffect, useMemo, useState } from 'react';
 
 import { HelloWave } from '@/components/hello-wave';
@@ -7,7 +7,7 @@ import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Link } from 'expo-router';
-import { getApiBaseUrl, getHealth, type HealthResponse } from '@/lib/datebook-api';
+import { createUser, getApiBaseUrl, getHealth, type HealthResponse } from '@/lib/datebook-api';
 
 export default function HomeScreen() {
   const apiBaseUrl = useMemo(() => {
@@ -21,6 +21,9 @@ export default function HomeScreen() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [loadingHealth, setLoadingHealth] = useState(false);
+  const [email, setEmail] = useState("test@example.com");
+  const [output, setOutput] = useState<string>("");
+
 
   async function refreshHealth() {
     setLoadingHealth(true);
@@ -54,6 +57,34 @@ export default function HomeScreen() {
         <ThemedText type="title">Welcome!</ThemedText>
         <HelloWave />
       </ThemedView>
+
+      <View style={{ flex: 1, padding: 24, justifyContent: "center", gap: 12 }}>
+      <Text style={{ fontSize: 18, fontWeight: "600" }}>Create User</Text>
+
+      <TextInput
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        style={{ borderWidth: 1, padding: 10, borderRadius: 8 }}
+      />
+
+      <Button
+        title="POST /users"
+        onPress={async () => {
+          try {
+            setOutput("Working...");
+            const res = await createUser(email);
+            setOutput(JSON.stringify(res, null, 2));
+          } catch (e: any) {
+            setOutput(`Error: ${e.message}`);
+          }
+        }}
+      />
+
+      <Text selectable style={{ marginTop: 12, fontFamily: "monospace" }}>
+        {output}
+      </Text>
+    </View>
 
       <ThemedView style={styles.stepContainer}>
         <ThemedText type="subtitle">API Health</ThemedText>

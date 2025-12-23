@@ -81,6 +81,14 @@ export async function pgQuery<T extends Record<string, unknown> = Record<string,
     return p.query<T>(text, params);
 }
 
+/**
+ * Returns the singleton Pool used by this Functions app.
+ * Useful for libraries (like Drizzle) that operate on a Pool/Client directly.
+ */
+export function getPgPool(): Pool {
+    return getPool();
+}
+
 export function isDatabaseConfigError(err: unknown): err is DatabaseUrlMissingError | DatabaseUrlInvalidError {
     return err instanceof DatabaseUrlMissingError || err instanceof DatabaseUrlInvalidError;
 }

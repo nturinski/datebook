@@ -1,19 +1,25 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { isDatabaseConfigError, pgQuery } from "../lib/postgres";
+import { db} from "../db/client";
+import { events } from "../db/schema";
+import { eq } from "drizzle-orm";
 
 export async function health(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const startedAt = Date.now();
   context.log(`Health check request: ${request.method} ${request.url}`);
 
   try {
-    const result = await pgQuery<{ now: string }>("select now() as now");
-    const dbTime = result.rows[0]?.now;
+    const result = await db
+    .select()
+    .from(events);
+
+    console.log(result);
 
     return {
       status: 200,
       jsonBody: {
         ok: true,
-        dbTime,
+        dbTime: result,
         latencyMs: Date.now() - startedAt,
       },
     };

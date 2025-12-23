@@ -15,6 +15,23 @@ export type HealthError = {
 
 export type HealthResponse = HealthOk | HealthError;
 
+export type CreateUserOk = {
+  ok: true;
+  user: {
+    id: string;
+    email: string;
+    createdAt?: string;
+  };
+};
+
+export type CreateUserError = {
+  ok: false;
+  error: string;
+  details?: unknown;
+};
+
+export type CreateUserResponse = CreateUserOk | CreateUserError;
+
 const DEFAULT_TIMEOUT_MS = 8000;
 
 function withoutTrailingSlash(value: string): string {
@@ -111,4 +128,15 @@ async function fetchJson<T>(
 export async function getHealth(): Promise<HealthResponse> {
   const baseUrl = getApiBaseUrl();
   return await fetchJson<HealthResponse>(`${baseUrl}/health`);
+}
+
+export async function createUser(email: string): Promise<CreateUserResponse> {
+  const baseUrl = getApiBaseUrl();
+  return await fetchJson<CreateUserResponse>(`${baseUrl}/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email }),
+  });
 }
