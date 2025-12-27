@@ -1,18 +1,22 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { db } from "../db/client";
-import { users } from "../db/schema";
+import { users } from "../db/schema/schema";
 import { desc } from "drizzle-orm";
 import { z } from "zod";
+import { corsHeaders, handleCorsPreflight } from "../lib/cors";
 
 const bodySchema = z.object({
   email: z.email(),
 });
 
 app.http("usersCreate", {
-  methods: ["POST"],
+  methods: ["POST", "OPTIONS"],
   authLevel: "anonymous",
   route: "users",
   handler: async (req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    const preflight = handleCorsPreflight(req);
+    if (preflight) return preflight;
+
     try {
       const body = await req.json().catch(() => null);
       const parsed = bodySchema.safeParse(body);
@@ -20,6 +24,7 @@ app.http("usersCreate", {
       if (!parsed.success) {
         return {
           status: 400,
+          headers: corsHeaders(req),
           jsonBody: { ok: false, error: "Invalid body", details: parsed.error.flatten() },
         };
       }
@@ -37,25 +42,29 @@ app.http("usersCreate", {
 
       return {
         status: 201,
+        headers: corsHeaders(req),
         jsonBody: { ok: true, user: inserted[0] },
       };
     } catch (err: any) {
       // Unique constraint (email) -> Postgres error code 23505
       if (err?.code === "23505") {
-        return { status: 409, jsonBody: { ok: false, error: "Email already exists" } };
+        return { status: 409, headers: corsHeaders(req), jsonBody: { ok: false, error: "Email already exists" } };
       }
 
       context.error("usersCreate failed", err);
-      return { status: 500, jsonBody: { ok: false, error: "Internal error" } };
+      return { status: 500, headers: corsHeaders(req), jsonBody: { ok: false, error: "Internal error" } };
     }
   },
 });
 
 app.http("usersList", {
-  methods: ["GET"],
+  methods: ["GET", "OPTIONS"],
   authLevel: "anonymous",
-  route: "users",
+  route: "users/list",
   handler: async (req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    const preflight = handleCorsPreflight(req);
+    if (preflight) return preflight;
+
     try {
       const limitRaw = req.query.get("limit");
       const limitParsed = limitRaw ? Number.parseInt(limitRaw, 10) : 100;
@@ -73,11 +82,12 @@ app.http("usersList", {
 
       return {
         status: 200,
+        headers: corsHeaders(req),
         jsonBody: { ok: true, users: rows },
       };
     } catch (err: any) {
       context.error("usersList failed", err);
-      return { status: 500, jsonBody: { ok: false, error: "Internal error" } };
+      return { status: 500, headers: corsHeaders(req), jsonBody: { ok: false, error: "Internal error" } };
     }
   },
 });

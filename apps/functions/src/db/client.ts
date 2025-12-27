@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
 
 import { getPgPool } from '../lib/postgres';
-import * as schema from './schema';
+import * as schema from './schema/schema';
 
 /**
  * Shared Drizzle client for Azure Functions.
