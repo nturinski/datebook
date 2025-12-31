@@ -5,9 +5,11 @@ import { z } from "zod";
 import { db } from "../db/client";
 import { entries } from "../db/schema/entries";
 import { entryEdits } from "../db/schema/entryEdits";
+import { entryMedia } from "../db/schema/entryMedia";
 import { corsHeaders, handleCorsPreflight } from "../lib/cors";
 import { requireRelationshipMember, requireRelationshipMemberFromRequest } from "../auth/requireRelationshipMember";
 import { requireAuth } from "../auth/requireAuth";
+import { createReadUrl } from "../lib/mediaStorage";
 
 function parseIsoDateOnly(value: string): Date {
   // Accept YYYY-MM-DD and treat it as a date-only value.
@@ -365,6 +367,35 @@ app.http("entryById", {
       }
 
       // Default: GET by id
+      const mediaRows = await db
+        .select({
+          id: entryMedia.id,
+          blobKey: entryMedia.blobKey,
+          kind: entryMedia.kind,
+          width: entryMedia.width,
+          height: entryMedia.height,
+          createdAt: entryMedia.createdAt,
+        })
+        .from(entryMedia)
+        .where(and(eq(entryMedia.entryId, id), eq(entryMedia.relationshipId, member.relationshipId)))
+        .orderBy(desc(entryMedia.createdAt));
+
+      const media = await Promise.all(
+        mediaRows.map(async (m) => {
+          const read = await createReadUrl({ blobKey: m.blobKey, expiresInMinutes: 60 });
+          return {
+            id: m.id,
+            blobKey: m.blobKey,
+            kind: m.kind,
+            width: m.width,
+            height: m.height,
+            createdAt: m.createdAt.toISOString(),
+            url: read.url,
+            expiresAt: read.expiresAt,
+          };
+        })
+      );
+
       return {
         status: 200,
         headers: corsHeaders(req),
@@ -378,6 +409,7 @@ app.http("entryById", {
             body: existing.body,
             createdAt: existing.createdAt,
             updatedAt: existing.updatedAt,
+            media,
           },
         },
       };

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -49,6 +49,12 @@ export default function EntryDetailScreen() {
       }
     })();
   }, [id]);
+
+  async function refreshEntry() {
+    if (!id) return;
+    const e = await getEntryById(id);
+    setEntry(e);
+  }
 
   async function pickAndAttachPhoto() {
     if (!entry) return;
@@ -141,6 +147,9 @@ export default function EntryDetailScreen() {
         height,
       });
 
+      // Refresh so the new photo appears immediately.
+      await refreshEntry();
+
       setUploadStatus('Photo attached.');
     } catch (e: unknown) {
       setUploadStatus(e instanceof Error ? e.message : String(e));
@@ -193,6 +202,32 @@ export default function EntryDetailScreen() {
 
             <Text style={[styles.muted, { marginTop: 10 }]}>Notes</Text>
             {entry.body ? <Text style={styles.body}>{entry.body}</Text> : <Text style={styles.muted}>(none)</Text>}
+
+            <Text style={[styles.muted, { marginTop: 10 }]}>Photos</Text>
+            {Array.isArray(entry.media) && entry.media.length > 0 ? (
+              <View style={{ gap: 10 }}>
+                {entry.media
+                  .filter((m) => m.kind === 'photo' && typeof m.url === 'string' && m.url.length > 0)
+                  .map((m) => {
+                    const ratio =
+                      typeof m.width === 'number' && typeof m.height === 'number' && m.width > 0 && m.height > 0
+                        ? m.width / m.height
+                        : undefined;
+
+                    return (
+                      <View key={m.id} style={styles.photoCard}>
+                        <Image
+                          source={{ uri: m.url }}
+                          style={[styles.photo, ratio ? { aspectRatio: ratio } : null]}
+                          resizeMode="cover"
+                        />
+                      </View>
+                    );
+                  })}
+              </View>
+            ) : (
+              <Text style={styles.muted}>(none)</Text>
+            )}
 
             <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
               <Pressable
@@ -310,6 +345,19 @@ const styles = StyleSheet.create({
     color: PaperColors.ink,
     opacity: 0.85,
     lineHeight: 20,
+  },
+  photoCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: PaperColors.border,
+    backgroundColor: PaperColors.paper,
+  },
+  photo: {
+    width: '100%',
+    height: undefined,
+    aspectRatio: 4 / 3,
+    backgroundColor: PaperColors.paper,
   },
   button: {
     alignSelf: 'flex-start',
