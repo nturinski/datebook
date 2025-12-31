@@ -39,17 +39,22 @@ function withoutTrailingSlash(value: string): string {
 }
 
 function guessDevHostIp(): string | null {
-  // Expo dev hostUri commonly looks like: "192.168.1.50:8081".
-  const hostUri =
+  // Expo dev host fields commonly look like:
+  // - hostUri: "192.168.1.50:8081" (or sometimes "localhost:8081")
+  // - debuggerHost: "192.168.1.50:8081"
+  const hostLike =
+    // Most reliable when present
+    (Constants as any)?.expoConfig?.debuggerHost ??
+    (Constants as any)?.manifest2?.extra?.expoClient?.debuggerHost ??
+    (Constants as any)?.manifest?.debuggerHost ??
+    // Fallback
     Constants.expoConfig?.hostUri ??
-    // legacy / alternate shape
     (Constants as any)?.manifest2?.extra?.expoClient?.hostUri ??
     (Constants as any)?.manifest?.hostUri;
 
-  if (typeof hostUri !== 'string' || hostUri.length === 0) return null;
+  if (typeof hostLike !== 'string' || hostLike.length === 0) return null;
 
-  // hostUri can be "192.168.1.50:8081" or "192.168.1.50".
-  const host = hostUri.split(':')[0];
+  const host = hostLike.split(':')[0];
   if (!host) return null;
 
   // Some environments report "localhost" which won't work for a physical device.
@@ -66,7 +71,13 @@ function guessDevHostIp(): string | null {
 export function getApiBaseUrl(): string {
   const fromEnv = process.env.EXPO_PUBLIC_API_BASE_URL;
   if (typeof fromEnv === 'string' && fromEnv.length > 0) {
-    return withoutTrailingSlash(fromEnv);
+    const normalized = withoutTrailingSlash(fromEnv);
+
+    // Accept either:
+    //   http://host:7071
+    //   http://host:7071/api
+    // but always return a base that includes the route prefix.
+    return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
   }
 
   const devHostIp = guessDevHostIp();

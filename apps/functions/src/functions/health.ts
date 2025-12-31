@@ -1,10 +1,14 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { isDatabaseConfigError, pgQuery } from "../lib/postgres";
 import { db} from "../db/client";
-import { events } from "../db/schema";
+import { events } from "../db/schema/schema";
 import { eq } from "drizzle-orm";
+import { corsHeaders, handleCorsPreflight } from "../lib/cors";
 
 export async function health(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const preflight = handleCorsPreflight(request);
+  if (preflight) return preflight;
+
   const startedAt = Date.now();
   context.log(`Health check request: ${request.method} ${request.url}`);
 
@@ -17,6 +21,7 @@ export async function health(request: HttpRequest, context: InvocationContext): 
 
     return {
       status: 200,
+      headers: corsHeaders(request),
       jsonBody: {
         ok: true,
         dbTime: result,
@@ -32,6 +37,7 @@ export async function health(request: HttpRequest, context: InvocationContext): 
 
     return {
       status: 500,
+      headers: corsHeaders(request),
       jsonBody: {
         ok: false,
         error: safeMessage,
@@ -42,7 +48,7 @@ export async function health(request: HttpRequest, context: InvocationContext): 
 };
 
 app.http('health', {
-    methods: ['GET'],
+  methods: ['GET', 'OPTIONS'],
     authLevel: 'anonymous',
     handler: health
 });

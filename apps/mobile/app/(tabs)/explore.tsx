@@ -1,112 +1,143 @@
 import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Collapsible } from '@/components/ui/collapsible';
 import { ExternalLink } from '@/components/external-link';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Fonts } from '@/constants/theme';
+import { PaperColors } from '@/constants/paper';
 
 export default function TabTwoScreen() {
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText
-          type="title"
-          style={{
-            fontFamily: Fonts.rounded,
-          }}>
-          Explore
-        </ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image
-          source={require('@/assets/images/react-logo.png')}
-          style={{ width: 100, height: 100, alignSelf: 'center' }}
-        />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful{' '}
-          <ThemedText type="defaultSemiBold" style={{ fontFamily: Fonts.mono }}>
-            react-native-reanimated
-          </ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+    <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
+      <View style={styles.paper}>
+        <View style={styles.header}>
+          <Text style={styles.kicker}>Datebook</Text>
+          <Text style={styles.title}>Explore</Text>
+          <Text style={styles.subtitle}>A few handy links and notes while you’re building.</Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>File-based routing</Text>
+          <Text style={styles.body}>
+            This app uses Expo Router. Your tab screens live in{' '}
+            <Text style={styles.mono}>app/(tabs)</Text>.
+          </Text>
+          <ExternalLink href="https://docs.expo.dev/router/introduction">
+            <Text style={styles.link}>Expo Router docs</Text>
+          </ExternalLink>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Images</Text>
+          <Text style={styles.body}>Use @2x / @3x assets for crisp rendering across densities.</Text>
+          <Image
+            source={require('@/assets/images/react-logo.png')}
+            style={{ width: 90, height: 90, alignSelf: 'center' }}
+          />
+          <ExternalLink href="https://reactnative.dev/docs/images">
+            <Text style={styles.link}>React Native Images docs</Text>
+          </ExternalLink>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Color themes</Text>
+          <Text style={styles.body}>
+            We support light/dark mode. The theme colors are in{' '}
+            <Text style={styles.mono}>constants/theme.ts</Text>.
+          </Text>
+          <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
+            <Text style={styles.link}>Expo color themes guide</Text>
+          </ExternalLink>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Animations</Text>
+          <Text style={styles.body}>
+            <Text style={styles.mono}>react-native-reanimated</Text> powers the parallax header and
+            other animations.
+          </Text>
+          <ExternalLink href="https://docs.swmansion.com/react-native-reanimated/">
+            <Text style={styles.link}>Reanimated docs</Text>
+          </ExternalLink>
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  page: {
+    flex: 1,
+    backgroundColor: PaperColors.sand,
   },
-  titleContainer: {
-    flexDirection: 'row',
-    gap: 8,
+  pageContent: {
+    padding: 18,
+  },
+  paper: {
+    backgroundColor: PaperColors.paper,
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(46,42,39,0.08)',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 3,
+    gap: 12,
+  },
+  header: {
+    gap: 6,
+  },
+  kicker: {
+    color: PaperColors.ink,
+    opacity: 0.65,
+    letterSpacing: 1.2,
+    fontSize: 12,
+    textTransform: 'uppercase',
+  },
+  title: {
+    color: PaperColors.ink,
+    fontSize: 28,
+    fontWeight: '700',
+    lineHeight: 32,
+  },
+  subtitle: {
+    color: PaperColors.ink,
+    opacity: 0.7,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  card: {
+    backgroundColor: PaperColors.white,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: PaperColors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+    gap: 10,
+  },
+  cardTitle: {
+    color: PaperColors.ink,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  body: {
+    color: PaperColors.ink,
+    opacity: 0.82,
+    lineHeight: 20,
+  },
+  mono: {
+    fontFamily: 'monospace',
+    color: PaperColors.ink,
+    opacity: 0.9,
+  },
+  link: {
+    textDecorationLine: 'underline',
+    fontWeight: '600',
+    color: PaperColors.ink,
+    opacity: 0.9,
   },
 });
