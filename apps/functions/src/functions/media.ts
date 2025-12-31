@@ -7,7 +7,7 @@ import { createUploadUrl } from "../lib/mediaStorage";
 import { db } from "../db/client";
 import { entries } from "../db/schema/entries";
 import { entryMedia } from "../db/schema/entryMedia";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 const UploadUrlBodySchema = z.object({
   relationshipId: z.string().uuid(),
@@ -150,6 +150,102 @@ app.http("entryAttachMedia", {
         status: 201,
         headers: corsHeaders(req),
         jsonBody: { ok: true, media: inserted[0] },
+      };
+    } catch (e: unknown) {
+      ctx.error(e);
+      return {
+        status: 401,
+        headers: corsHeaders(req),
+        jsonBody: { ok: false, error: e instanceof Error ? e.message : "Unauthorized" },
+      };
+    }
+  },
+});
+
+const UpdatePositionBodySchema = z.object({
+  // Normalized 0..1
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+
+  // Visual scale multiplier (1 = default). Kept reasonably bounded.
+  scale: z.number().min(0.25).max(4).optional(),
+});
+
+app.http("entryUpdateMediaPosition", {
+  methods: ["PATCH", "OPTIONS"],
+  route: "entries/{id}/media/{mediaId}",
+  authLevel: "anonymous",
+  handler: async (req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> => {
+    const preflight = handleCorsPreflight(req);
+    if (preflight) return preflight;
+
+    const entryId = req.params.id;
+    const mediaId = req.params.mediaId;
+    if (!entryId || !mediaId) {
+      return {
+        status: 400,
+        headers: corsHeaders(req),
+        jsonBody: { ok: false, error: "Missing id" },
+      };
+    }
+
+    try {
+      const raw = await req.json().catch(() => null);
+      const parsed = UpdatePositionBodySchema.safeParse(raw);
+      if (!parsed.success) {
+        return {
+          status: 400,
+          headers: corsHeaders(req),
+          jsonBody: { ok: false, error: "Invalid body", details: parsed.error.flatten() },
+        };
+      }
+
+      // Determine relationship via DB (never trust client relationshipId).
+      const existing = await db
+        .select({ relationshipId: entries.relationshipId })
+        .from(entries)
+        .where(eq(entries.id, entryId))
+        .limit(1);
+
+      const row = existing[0];
+      if (!row) {
+        return { status: 404, headers: corsHeaders(req), jsonBody: { ok: false, error: "Not found" } };
+      }
+
+      const member = await requireRelationshipMember(req, row.relationshipId);
+
+      const patch: Partial<typeof entryMedia.$inferInsert> = {
+        x: parsed.data.x,
+        y: parsed.data.y,
+        ...(typeof parsed.data.scale === "number" ? { scale: parsed.data.scale } : {}),
+      };
+
+      const updated = await db
+        .update(entryMedia)
+        .set(patch)
+        .where(
+          and(
+            eq(entryMedia.id, mediaId),
+            eq(entryMedia.entryId, entryId),
+            eq(entryMedia.relationshipId, member.relationshipId)
+          )
+        )
+        .returning({
+          id: entryMedia.id,
+          entryId: entryMedia.entryId,
+          x: entryMedia.x,
+          y: entryMedia.y,
+          scale: entryMedia.scale,
+        });
+
+      if (!updated[0]) {
+        return { status: 404, headers: corsHeaders(req), jsonBody: { ok: false, error: "Not found" } };
+      }
+
+      return {
+        status: 200,
+        headers: corsHeaders(req),
+        jsonBody: { ok: true, media: updated[0] },
       };
     } catch (e: unknown) {
       ctx.error(e);

@@ -1,4 +1,4 @@
-import { index, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { doublePrecision, index, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { entries } from "./entries";
 import { relationships } from "./relationships";
@@ -24,6 +24,15 @@ export const entryMedia = pgTable(
 
     width: integer("width").notNull(),
     height: integer("height").notNull(),
+
+    // Normalized (0..1) position within the entry's photo canvas.
+    // This makes layouts resilient across devices/screen sizes.
+    x: doublePrecision("x").notNull().default(0),
+    y: doublePrecision("y").notNull().default(0),
+
+    // Visual scale of the media item on the canvas.
+    // This is not normalized; it's a simple multiplier (1 = default size).
+    scale: doublePrecision("scale").notNull().default(1),
 
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
   },

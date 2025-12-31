@@ -11,6 +11,50 @@ import { requireRelationshipMember, requireRelationshipMemberFromRequest } from 
 import { requireAuth } from "../auth/requireAuth";
 import { createReadUrl } from "../lib/mediaStorage";
 
+function isDevDiagnosticsEnabled(): boolean {
+  // DEV_ADMIN_MODE is already used in this repo for dev-only behavior.
+  return (process.env.DEV_ADMIN_MODE ?? "").toLowerCase() === "true";
+}
+
+function tryGetDatabaseHost(): string | null {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    return u.host;
+  } catch {
+    return null;
+  }
+}
+
+function classifyHttpError(err: unknown): { status: number; message: string; details?: unknown } {
+  const message = err instanceof Error ? err.message : String(err);
+
+  // Auth / membership errors (thrown by helpers) should not look like server errors.
+  if (message.includes("Missing Authorization header") || message.includes("Invalid Authorization header")) {
+    return { status: 401, message };
+  }
+  if (message.includes("Not a member of this relationship") || message.includes("Relationship membership pending")) {
+    return { status: 403, message };
+  }
+  if (message.includes("No relationship") || message.includes("Missing relationshipId")) {
+    return { status: 409, message };
+  }
+
+  // Everything else is assumed to be a server error.
+  const details = isDevDiagnosticsEnabled()
+    ? {
+        message,
+        // Drizzle often wraps the underlying Postgres error in `cause`.
+        cause: (err as any)?.cause?.message,
+        code: (err as any)?.cause?.code ?? (err as any)?.code,
+        dbHost: tryGetDatabaseHost(),
+      }
+    : undefined;
+
+  return { status: 500, message: "Internal server error", ...(details ? { details } : {}) };
+}
+
 function parseIsoDateOnly(value: string): Date {
   // Accept YYYY-MM-DD and treat it as a date-only value.
   // Postgres DATE is timezone-less; using a UTC midnight Date is fine.
@@ -374,6 +418,9 @@ app.http("entryById", {
           kind: entryMedia.kind,
           width: entryMedia.width,
           height: entryMedia.height,
+          x: entryMedia.x,
+          y: entryMedia.y,
+          scale: entryMedia.scale,
           createdAt: entryMedia.createdAt,
         })
         .from(entryMedia)
@@ -389,6 +436,9 @@ app.http("entryById", {
             kind: m.kind,
             width: m.width,
             height: m.height,
+            x: m.x,
+            y: m.y,
+            scale: m.scale,
             createdAt: m.createdAt.toISOString(),
             url: read.url,
             expiresAt: read.expiresAt,
@@ -415,9 +465,12 @@ app.http("entryById", {
       };
     } catch (e: unknown) {
       ctx.error(e);
-      const msg = e instanceof Error ? e.message : "Unauthorized";
-      const status = 401;
-      return { status, headers: corsHeaders(req), jsonBody: { ok: false, error: msg } };
+      const classified = classifyHttpError(e);
+      return {
+        status: classified.status,
+        headers: corsHeaders(req),
+        jsonBody: { ok: false, error: classified.message, ...(classified.details ? { details: classified.details } : {}) },
+      };
     }
   },
 });

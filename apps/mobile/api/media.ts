@@ -65,3 +65,33 @@ export async function attachEntryMedia(args: {
 
   return { id: res.media.id };
 }
+
+export type UpdateEntryMediaPositionResponse =
+  | { ok: true; media: { id: string; entryId: string; x: number; y: number; scale: number } }
+  | { ok: false; error: string; details?: unknown };
+
+export async function updateEntryMediaPosition(args: {
+  entryId: string;
+  mediaId: string;
+  x: number;
+  y: number;
+  scale?: number;
+}): Promise<void> {
+  const json: Record<string, unknown> = {
+    x: args.x,
+    y: args.y,
+    ...(typeof args.scale === 'number' ? { scale: args.scale } : {}),
+  };
+
+  const res = await apiFetch<UpdateEntryMediaPositionResponse>(
+    `/entries/${encodeURIComponent(args.entryId)}/media/${encodeURIComponent(args.mediaId)}`,
+    {
+      method: 'PATCH',
+      json,
+    }
+  );
+
+  if (!('ok' in res) || !res.ok) {
+    throw new Error((res as any)?.error ?? 'Failed to save photo transform');
+  }
+}

@@ -1,0 +1,1 @@
+ALTER TABLE "entry_media" ADD COLUMN "scale" double precision DEFAULT 1 NOT NULL;

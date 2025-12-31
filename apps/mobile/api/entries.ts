@@ -16,6 +16,9 @@ export type TimelineEntry = {
     kind: string;
     width: number;
     height: number;
+    x: number;
+    y: number;
+    scale: number;
     createdAt: string;
     url: string;
     expiresAt?: string;

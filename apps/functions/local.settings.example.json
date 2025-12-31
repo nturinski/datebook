@@ -1,0 +1,17 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+
+    "DATABASE_URL": "postgresql://USER:PASSWORD@HOST:5432/DBNAME?sslmode=require",
+
+    "DEV_ADMIN_MODE": "true",
+
+    "GOOGLE_CLIENT_IDS": "<comma-separated-google-oauth-client-ids>",
+    "JWT_SECRET": "<dev-only-secret-at-least-32-chars>",
+
+    "MEDIA_STORAGE_CONNECTION_STRING": "DefaultEndpointsProtocol=https;AccountName=<account>;AccountKey=<key>;EndpointSuffix=core.windows.net",
+    "MEDIA_CONTAINER_NAME": "datebook-media"
+  }
+}

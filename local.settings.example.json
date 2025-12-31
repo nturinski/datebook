@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+
+    "GOOGLE_CLIENT_IDS": "<comma-separated-google-oauth-client-ids>",
+    "JWT_SECRET": "<dev-only-secret-at-least-32-chars>",
+
+    "AZURE_STORAGE_CONNECTION_STRING": "DefaultEndpointsProtocol=https;AccountName=<account>;AccountKey=<key>;EndpointSuffix=core.windows.net"
+  }
+}

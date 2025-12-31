@@ -63,6 +63,19 @@
 			"options": {
 				"cwd": "${workspaceFolder}/apps\\functions"
 			}
+		},
+		{
+			"label": "pnpm typecheck (mobile)",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"--filter",
+				"@datebook/mobile",
+				"typecheck"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
 		}
 	]
 }
