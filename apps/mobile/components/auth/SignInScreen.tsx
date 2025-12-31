@@ -15,6 +15,7 @@ import {
     View,
 } from "react-native";
 import { verifyProviderAndCreateSession } from "../../auth/authService";
+import { PaperColors } from "@/constants/paper";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -64,20 +65,29 @@ export function SignInScreen({ onSignedIn }: Props) {
     () => {
       const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 
+      // Force the account chooser every time. Otherwise the system browser
+      // session may silently reuse the last signed-in Google user.
+      const extraParams = {
+        // Google OAuth supports space-separated values, e.g. "select_account consent".
+        prompt: "select_account",
+      } as const;
+
       // In Expo Go, force the Web client id (proxy redirect). Otherwise, use native client ids.
       return isExpoGo
         ? {
             clientId: webClientId,
             redirectUri,
+            extraParams,
           }
         : {
             iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
             androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
             webClientId,
             redirectUri,
+            extraParams,
           };
     },
-    [redirectUri]
+    [redirectUri, isExpoGo]
   );
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest(googleConfig);
@@ -109,7 +119,9 @@ export function SignInScreen({ onSignedIn }: Props) {
     try {
       setBusy("google");
       setError(null);
-      await promptAsync();
+      // iOS: ask for an ephemeral browser session to avoid reusing cookies.
+      // Other platforms ignore this option.
+      await promptAsync({ preferEphemeralSession: true });
     } catch (e: any) {
       setError(e?.message ?? "Google sign-in failed.");
       setBusy(null);
@@ -224,12 +236,11 @@ export function SignInScreen({ onSignedIn }: Props) {
 }
 
 // ---- “paper + ink + muted accents” palette (from your doc) ----
-const PAPER = "#F6EFE6";     // cream paper
-const SAND = "#E9DDCF";      // warm sand
-const INK = "#2E2A27";       // charcoal-ish
-const LAVENDER = "#C9C3E6";  // muted lavender
-const ROSE = "#E8C2C7";      // dusty rose
-const SAGE = "#C7D7C4";      // sage green
+const PAPER = PaperColors.paper;
+const SAND = PaperColors.sand;
+const INK = PaperColors.ink;
+const LAVENDER = PaperColors.lavender;
+const SAGE = PaperColors.sage;
 
 const styles = StyleSheet.create({
   page: {

@@ -3,7 +3,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/fu
 import { z } from "zod";
 import { db } from "../db/client";
 import { users } from "../db/schema/users";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { verifyGoogleIdToken } from "../auth/verifyGoogle";
 import { issueSessionJwt } from "../auth/sessionJwt";
 import { verifyAppleIdToken } from "../auth/verifyApple";
@@ -68,31 +68,73 @@ export async function authVerify(req: HttpRequest, ctx: InvocationContext): Prom
             providerSub = claims.sub;
         }
 
-        // Find existing user by provider identity
-        const existing = await db
-            .select()
-            .from(users)
-            .where(and(eq(users.provider, provider), eq(users.providerSub, providerSub)))
-            .limit(1);
+                // 1) Find existing user by provider identity
+                const existing = await db
+                    .select()
+                    .from(users)
+                    .where(and(eq(users.provider, provider), eq(users.providerSub, providerSub)))
+                    .limit(1);
 
-        let user = existing[0];
+                let user = existing[0];
 
-        if (!user) {
-            // Create new user
-            // Email might be null if provider didn't supply; handle your constraints accordingly.
-            const email = claims.email ?? `google_${providerSub}@noemail.local`;
+                // 2) Backward compatibility: older rows were created with just an email (provider/providerSub NULL).
+                // If we have an email and no provider-identity match, try to find by email and "upgrade" that row.
+                if (!user && claims?.email) {
+                    const email = claims.email;
 
-            const inserted = await db
-                .insert(users)
-                .values({
-                    email,
-                    provider,
-                    providerSub,
-                })
-                .returning();
+                    const byEmail = await db
+                        .select()
+                        .from(users)
+                        .where(sql`lower(${users.email}) = lower(${email})`)
+                        .limit(1);
 
-            user = inserted[0];
-        }
+                    const emailUser = byEmail[0];
+                    if (emailUser) {
+                        const hasProviderIdentity = Boolean(emailUser.provider) || Boolean(emailUser.providerSub);
+
+                        if (!hasProviderIdentity) {
+                            // Upgrade the legacy row to be tied to this provider identity.
+                            const updated = await db
+                                .update(users)
+                                .set({
+                                    email, // keep email current
+                                    provider,
+                                    providerSub,
+                                })
+                                .where(eq(users.id, emailUser.id))
+                                .returning();
+
+                            user = updated[0];
+                        } else if (emailUser.provider === provider && emailUser.providerSub === providerSub) {
+                            user = emailUser;
+                        } else {
+                            // This email is already linked to a different provider identity.
+                            // MVP: block to avoid silently creating duplicate users for the same email.
+                            return {
+                                status: 409,
+                                headers: corsHeaders(req),
+                                jsonBody: { ok: false, error: "Email already linked to another account" },
+                            };
+                        }
+                    }
+                }
+
+                // 3) Still no match -> create a new user
+                if (!user) {
+                    // Email might be null if provider didn't supply; handle your constraints accordingly.
+                    const email = claims?.email ?? `${provider}_${providerSub}@noemail.local`;
+
+                    const inserted = await db
+                        .insert(users)
+                        .values({
+                            email,
+                            provider,
+                            providerSub,
+                        })
+                        .returning();
+
+                    user = inserted[0];
+                }
 
         // Mint your own session JWT
         const token = await issueSessionJwt({
@@ -102,18 +144,19 @@ export async function authVerify(req: HttpRequest, ctx: InvocationContext): Prom
         });
 
         return { status: 200, headers: corsHeaders(req), jsonBody: { token, user: { id: user.id, email: user.email } } };
-    } catch (e: any) {
+    } catch (e: unknown) {
         ctx.error(e);
-        const message = e?.message ?? "Bad Request";
+        const message = e instanceof Error ? e.message : "Bad Request";
         const isConfigError = typeof message === "string" && message.startsWith("Missing ");
 
         // If we can, add a tiny bit of diagnostic context for audience mismatches.
         // This is the most common local-dev error.
-        let details: any = undefined;
+        let details: unknown = undefined;
         if (typeof message === "string" && message.includes("payload audience")) {
             try {
-                const idToken = typeof (rawBody as any)?.idToken === "string" ? (rawBody as any).idToken : null;
-                const payload: any = idToken ? decodeJwt(idToken) : null;
+                const maybeBody = rawBody as { idToken?: unknown } | null;
+                const idToken = typeof maybeBody?.idToken === "string" ? maybeBody.idToken : null;
+                const payload = idToken ? decodeJwt(idToken) : null;
                 details = {
                     tokenAud: payload?.aud ?? null,
                     requiredAudience: parseGoogleAudiences(),

@@ -1,7 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { db } from "../db/client";
-import { users } from "../db/schema/schema";
-import { desc } from "drizzle-orm";
+import { users } from "../db/schema/users";
+import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { corsHeaders, handleCorsPreflight } from "../lib/cors";
 
@@ -31,6 +31,22 @@ app.http("usersCreate", {
 
       const { email } = parsed.data;
 
+      // Prevent duplicates (case-insensitive). We intentionally do not rely on a DB unique constraint
+      // because older dev databases may not have one yet.
+      const existing = await db
+        .select({ id: users.id, email: users.email, createdAt: users.createdAt })
+        .from(users)
+        .where(sql`lower(${users.email}) = lower(${email})`)
+        .limit(1);
+
+      if (existing[0]) {
+        return {
+          status: 409,
+          headers: corsHeaders(req),
+          jsonBody: { ok: false, error: "Email already exists", user: existing[0] },
+        };
+      }
+
       const inserted = await db
         .insert(users)
         .values({ email })
@@ -46,11 +62,6 @@ app.http("usersCreate", {
         jsonBody: { ok: true, user: inserted[0] },
       };
     } catch (err: any) {
-      // Unique constraint (email) -> Postgres error code 23505
-      if (err?.code === "23505") {
-        return { status: 409, headers: corsHeaders(req), jsonBody: { ok: false, error: "Email already exists" } };
-      }
-
       context.error("usersCreate failed", err);
       return { status: 500, headers: corsHeaders(req), jsonBody: { ok: false, error: "Internal error" } };
     }

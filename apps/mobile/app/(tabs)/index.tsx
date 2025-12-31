@@ -1,223 +1,336 @@
-import { Image } from 'expo-image';
-import { ActivityIndicator, Button, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
-import { createUser, getApiBaseUrl, getHealth, type HealthResponse } from '@/lib/datebook-api';
+import { Link, router } from 'expo-router';
 import { SignInScreen } from '@/components/auth/SignInScreen';
 import { getSessionToken, getSessionUser, type SessionUser } from '@/auth/tokenStore';
 import { signOut } from '@/auth/authService';
 import { apiFetch } from '@/api/client';
+import { PaperColors } from '@/constants/paper';
+import { listRelationshipEntries, type TimelineEntry } from '@/api/entries';
 
-function HomeAuthed({ user, onSignOut }: { user: SessionUser | null; onSignOut: () => void }) {
-  const apiBaseUrl = useMemo(() => {
+type RelationshipStatus = 'none' | 'pending' | 'active';
+
+type MeResponse = {
+  ok: true;
+  user: { id: string; email: string };
+  memberships?: { relationshipId: string; role: string; memberStatus: string; status: string }[];
+  relationships?: { relationshipId: string; role: string; memberStatus: string; status: string }[];
+  pendingInviteCount?: number;
+  relationship:
+    | { status: 'none' }
+    | {
+        status: Exclude<RelationshipStatus, 'none'>;
+        relationshipId: string;
+        role: string;
+        memberStatus: string;
+      };
+};
+
+function TimelineAuthed({
+  user,
+  relationshipStatus,
+  relationshipId,
+  onSignOut,
+  onRefreshSession,
+}: {
+  user: SessionUser | null;
+  relationshipStatus: RelationshipStatus;
+  relationshipId: string | null;
+  onSignOut: () => void;
+  onRefreshSession: () => void;
+}) {
+  const [entries, setEntries] = useState<TimelineEntry[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [creatingRelationship, setCreatingRelationship] = useState(false);
+  const [inviteOutput, setInviteOutput] = useState<string>('');
+  const [generatingInvite, setGeneratingInvite] = useState(false);
+
+  async function createRelationship() {
+    setCreatingRelationship(true);
+    setError(null);
     try {
-      return getApiBaseUrl();
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [healthError, setHealthError] = useState<string | null>(null);
-  const [loadingHealth, setLoadingHealth] = useState(false);
-  const [email, setEmail] = useState('test@example.com');
-  const [output, setOutput] = useState<string>('');
-  const [devUsersOutput, setDevUsersOutput] = useState<string>('');
-
-  async function refreshHealth() {
-    setLoadingHealth(true);
-    setHealthError(null);
-
-    try {
-      const data = await getHealth();
-      setHealth(data);
-    } catch (err) {
-      setHealth(null);
-      setHealthError(err instanceof Error ? err.message : String(err));
+      await apiFetch('/relationships', { method: 'POST' });
+      await onRefreshSession();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoadingHealth(false);
+      setCreatingRelationship(false);
     }
   }
 
-  useEffect(() => {
-    void refreshHealth();
-  }, []);
+  async function generateInvite() {
+    if (!relationshipId) return;
+    setGeneratingInvite(true);
+    setError(null);
+    setInviteOutput('');
 
-  async function fetchDevUsers() {
     try {
-      setDevUsersOutput('Working...');
-      const res = await apiFetch<{ users: { id: string; email: string }[] }>('/dev/users');
-      setDevUsersOutput(JSON.stringify(res, null, 2));
-    } catch (e: any) {
-      setDevUsersOutput(`Error: ${e?.message ?? String(e)}`);
+      const res = await apiFetch<{ ok: true; code: string; link?: string; expiresAt: string }>('/relationships/invite', {
+        method: 'POST',
+        json: { relationshipId },
+      });
+
+      const deepLink = `datebook://join/${res.code}`;
+      const lines = [
+        'Invite code',
+        res.code,
+        '',
+        `app link: ${deepLink}`,
+        ...(res.link ? [`link: ${res.link}`] : []),
+        `expiresAt: ${res.expiresAt}`,
+        '',
+        'Share this code/link with your partner. They can use the Join screen to enter the code.',
+      ];
+      setInviteOutput(lines.join('\n'));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGeneratingInvite(false);
+    }
+  }
+
+  const canShowTimeline = relationshipStatus === 'active' && typeof relationshipId === 'string';
+
+  const loadFirstPage = useCallback(() => {
+    if (!canShowTimeline) {
+      setEntries([]);
+      setNextCursor(null);
+      return;
+    }
+
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await listRelationshipEntries({ relationshipId, limit: 50 });
+        setEntries(res.entries);
+        setNextCursor(res.nextCursor);
+      } catch (e: unknown) {
+        setEntries([]);
+        setNextCursor(null);
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [canShowTimeline, relationshipId]);
+
+  useEffect(() => {
+    loadFirstPage();
+  }, [loadFirstPage]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadFirstPage();
+    }, [loadFirstPage])
+  );
+
+  async function loadMore() {
+    if (!canShowTimeline) return;
+    if (!nextCursor) return;
+    if (loadingMore) return;
+
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const res = await listRelationshipEntries({ relationshipId, limit: 50, cursor: nextCursor });
+      setEntries((prev) => [...prev, ...res.entries]);
+      setNextCursor(res.nextCursor);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingMore(false);
     }
   }
 
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
+    <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
+      <View style={styles.paper}>
+        <View style={styles.header}>
+          <Text style={styles.kicker}>Datebook</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Timeline</Text>
+            <HelloWave />
+          </View>
+          <Text style={styles.subtitle}>
+            Signed in as: <Text style={styles.valueStrong}>{user ? user.email : '(unknown user)'}</Text>
+          </Text>
+        </View>
 
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Session</ThemedText>
-        <ThemedText>
-          Signed in as:{' '}
-          <ThemedText type="defaultSemiBold">
-            {user ? `${user.email} (${user.id})` : '(unknown user)'}
-          </ThemedText>
-        </ThemedText>
-        <Pressable
-          accessibilityRole="button"
-          onPress={onSignOut}
-          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
-          <ThemedText type="defaultSemiBold">Sign out</ThemedText>
-        </Pressable>
-      </ThemedView>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Session</Text>
+          <Text style={styles.muted}>Relationship status: <Text style={styles.valueStrong}>{relationshipStatus}</Text></Text>
 
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Dev API</ThemedText>
-        <Pressable
-          accessibilityRole="button"
-          onPress={fetchDevUsers}
-          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
-          <ThemedText type="defaultSemiBold">GET /dev/users</ThemedText>
-        </Pressable>
-        <ThemedText selectable style={{ fontFamily: 'monospace' }}>
-          {devUsersOutput}
-        </ThemedText>
-      </ThemedView>
+          <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onSignOut}
+              style={({ pressed }) => [styles.button, styles.secondaryButton, pressed && styles.buttonPressed]}>
+              <Text style={styles.buttonText}>Sign out</Text>
+            </Pressable>
 
-      <View style={{ flex: 1, padding: 24, justifyContent: 'center', gap: 12 }}>
-        <Text style={{ fontSize: 18, fontWeight: '600' }}>Create User</Text>
+            <Link href="/join/index" asChild>
+              <Pressable
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.button, styles.secondaryButton, pressed && styles.buttonPressed]}>
+                <Text style={styles.buttonText}>Join with code</Text>
+              </Pressable>
+            </Link>
 
-        <TextInput
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          style={{ borderWidth: 1, padding: 10, borderRadius: 8 }}
-        />
+            <Link href="/(tabs)/relationships" asChild>
+              <Pressable
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.button, styles.secondaryButton, pressed && styles.buttonPressed]}>
+                <Text style={styles.buttonText}>Relationships</Text>
+              </Pressable>
+            </Link>
+          </View>
+        </View>
 
-        <Button
-          title="POST /users"
-          onPress={async () => {
-            try {
-              setOutput('Working...');
-              const res = await createUser(email);
-              setOutput(JSON.stringify(res, null, 2));
-            } catch (e: any) {
-              setOutput(`Error: ${e.message}`);
-            }
-          }}
-        />
+        {relationshipStatus === 'none' ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Link your partner</Text>
+            <Text style={styles.body}>
+              Create a relationship, generate an invite code, and share it with your partner.
+            </Text>
 
-        <Text selectable style={{ marginTop: 12, fontFamily: 'monospace' }}>
-          {output}
-        </Text>
+            <View style={{ gap: 10 }}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void createRelationship()}
+                disabled={creatingRelationship}
+                style={({ pressed }) => [
+                  styles.button,
+                  styles.primaryButton,
+                  (pressed || creatingRelationship) && styles.buttonPressed,
+                  creatingRelationship && styles.buttonDisabled,
+                ]}>
+                <Text style={styles.buttonText}>{creatingRelationship ? 'Creating…' : 'Create relationship'}</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
+        {relationshipStatus === 'active' && relationshipId ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Invite partner</Text>
+            <Text style={styles.muted}>Relationship</Text>
+            <Text selectable style={styles.code}>{relationshipId}</Text>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void generateInvite()}
+              disabled={generatingInvite}
+              style={({ pressed }) => [
+                styles.button,
+                styles.primaryButton,
+                (pressed || generatingInvite) && styles.buttonPressed,
+                generatingInvite && styles.buttonDisabled,
+              ]}>
+              <Text style={styles.buttonText}>{generatingInvite ? 'Generating…' : 'Generate invite code'}</Text>
+            </Pressable>
+
+            {inviteOutput ? (
+              <View style={styles.monoBlock}>
+                <Text selectable style={styles.monoText}>{inviteOutput}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
+        {relationshipStatus === 'pending' ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Waiting on partner</Text>
+            <Text style={styles.body}>
+              Your relationship is pending. Once both members are active, you’ll be able to add memories.
+            </Text>
+          </View>
+        ) : null}
+
+        {canShowTimeline ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Memories</Text>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push({ pathname: '/entries/new', params: { relationshipId } })}
+              style={({ pressed }) => [styles.button, styles.primaryButton, pressed && styles.buttonPressed]}>
+              <Text style={styles.buttonText}>Add memory</Text>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={loadFirstPage}
+              disabled={loading}
+              style={({ pressed }) => [
+                styles.button,
+                styles.secondaryButton,
+                (pressed || loading) && styles.buttonPressed,
+                loading && styles.buttonDisabled,
+              ]}>
+              <Text style={styles.buttonText}>{loading ? 'Refreshing…' : 'Refresh timeline'}</Text>
+            </Pressable>
+
+            {entries.length === 0 && !loading ? (
+              <Text style={styles.muted}>No entries yet. Add your first memory.</Text>
+            ) : null}
+
+            <View style={{ gap: 10, marginTop: 6 }}>
+              {entries.map((e) => {
+                const occurred = new Date(e.occurredAt);
+                const dateLabel = Number.isNaN(occurred.getTime()) ? e.occurredAt : occurred.toLocaleDateString();
+                const preview = typeof e.body === 'string' && e.body.trim().length > 0 ? e.body.trim() : '';
+
+                return (
+                  <Pressable
+                    key={e.id}
+                    accessibilityRole="button"
+                    onPress={() => router.push({ pathname: '/entries/[id]', params: { id: e.id } })}
+                    style={({ pressed }) => [styles.entryRow, pressed && styles.entryRowPressed]}>
+                    <Text style={styles.entryDate}>{dateLabel}</Text>
+                    <Text style={styles.entryTitle}>{e.title}</Text>
+                    {preview ? (
+                      <Text numberOfLines={2} style={styles.entryPreview}>
+                        {preview}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {nextCursor ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void loadMore()}
+                disabled={loadingMore}
+                style={({ pressed }) => [
+                  styles.button,
+                  styles.secondaryButton,
+                  (pressed || loadingMore) && styles.buttonPressed,
+                  loadingMore && styles.buttonDisabled,
+                  { marginTop: 12 },
+                ]}>
+                <Text style={styles.buttonText}>{loadingMore ? 'Loading…' : 'Load more'}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
+        {error ? (
+          <View style={styles.card}>
+            <Text style={styles.error}>Error: {error}</Text>
+          </View>
+        ) : null}
       </View>
-
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">API Health</ThemedText>
-        <ThemedText>
-          Base URL:{' '}
-          <ThemedText type="defaultSemiBold">{apiBaseUrl ?? '(not configured)'}</ThemedText>
-        </ThemedText>
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={refreshHealth}
-          disabled={loadingHealth}
-          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed, loadingHealth && styles.buttonDisabled]}>
-          <ThemedText type="defaultSemiBold">{loadingHealth ? 'Checking…' : 'Refresh health'}</ThemedText>
-        </Pressable>
-
-        {health ? (
-          <ThemedText>
-            Result:{' '}
-            <ThemedText type="defaultSemiBold">
-              {health.ok
-                ? `OK (dbTime=${health.dbTime ?? 'n/a'}, latencyMs=${health.latencyMs})`
-                : `NOT OK (${health.error}, latencyMs=${health.latencyMs})`}
-            </ThemedText>
-          </ThemedText>
-        ) : null}
-
-        {healthError ? (
-          <ThemedText>
-            Error: <ThemedText type="defaultSemiBold">{healthError}</ThemedText>
-          </ThemedText>
-        ) : null}
-      </ThemedView>
-
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
-
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+    </ScrollView>
   );
 }
 
@@ -225,11 +338,33 @@ export default function HomeScreen() {
   const [sessionChecked, setSessionChecked] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [relationshipStatus, setRelationshipStatus] = useState<RelationshipStatus>('none');
+  const [relationshipId, setRelationshipId] = useState<string | null>(null);
 
   async function refreshSession() {
     const [t, u] = await Promise.all([getSessionToken(), getSessionUser()]);
     setToken(t);
     setUser(u);
+
+    // Boot endpoint: validate token + get server truth.
+    if (t) {
+      try {
+        const me = await apiFetch<MeResponse>('/me');
+        setUser(me.user);
+        setRelationshipStatus(me.relationship.status);
+        setRelationshipId(me.relationship.status === 'none' ? null : me.relationship.relationshipId);
+      } catch {
+        // Token invalid/expired -> clear local state and let SignInScreen show.
+        setToken(null);
+        setUser(null);
+        setRelationshipStatus('none');
+        setRelationshipId(null);
+      }
+    } else {
+      setRelationshipStatus('none');
+      setRelationshipId(null);
+    }
+
     setSessionChecked(true);
   }
 
@@ -239,9 +374,27 @@ export default function HomeScreen() {
     (async () => {
       try {
         const [t, u] = await Promise.all([getSessionToken(), getSessionUser()]);
-        if (!cancelled) {
-          setToken(t);
-          setUser(u);
+        if (cancelled) return;
+
+        setToken(t);
+        setUser(u);
+
+        if (t) {
+          try {
+            const me = await apiFetch<MeResponse>('/me');
+            if (!cancelled) {
+              setUser(me.user);
+              setRelationshipStatus(me.relationship.status);
+              setRelationshipId(me.relationship.status === 'none' ? null : me.relationship.relationshipId);
+            }
+          } catch {
+            if (!cancelled) {
+              setToken(null);
+              setUser(null);
+              setRelationshipStatus('none');
+              setRelationshipId(null);
+            }
+          }
         }
       } finally {
         if (!cancelled) setSessionChecked(true);
@@ -268,8 +421,11 @@ export default function HomeScreen() {
   }
 
   return (
-    <HomeAuthed
+    <TimelineAuthed
       user={user}
+      relationshipStatus={relationshipStatus}
+      relationshipId={relationshipId}
+      onRefreshSession={() => void refreshSession()}
       onSignOut={() => {
         void (async () => {
           await signOut();
@@ -281,34 +437,163 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  page: {
+    flex: 1,
+    backgroundColor: PaperColors.sand,
+  },
+  pageContent: {
+    padding: 18,
+  },
+  paper: {
+    backgroundColor: PaperColors.paper,
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(46,42,39,0.08)',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 3,
+    gap: 12,
+  },
+  header: {
+    gap: 6,
+  },
+  kicker: {
+    color: PaperColors.ink,
+    opacity: 0.65,
+    letterSpacing: 1.2,
+    fontSize: 12,
+    textTransform: 'uppercase',
+  },
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  title: {
+    color: PaperColors.ink,
+    fontSize: 28,
+    fontWeight: '700',
+    lineHeight: 32,
+  },
+  subtitle: {
+    color: PaperColors.ink,
+    opacity: 0.7,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  muted: {
+    color: PaperColors.ink,
+    opacity: 0.65,
+  },
+  value: {
+    color: PaperColors.ink,
+    opacity: 0.9,
+  },
+  valueStrong: {
+    color: PaperColors.ink,
+    fontWeight: '700',
+    opacity: 0.95,
+  },
+  code: {
+    fontFamily: 'monospace',
+    paddingVertical: 6,
+    color: PaperColors.ink,
+  },
+  card: {
+    backgroundColor: PaperColors.white,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: PaperColors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+    gap: 10,
+  },
+  cardTitle: {
+    color: PaperColors.ink,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  body: {
+    color: PaperColors.ink,
+    opacity: 0.82,
+    lineHeight: 20,
   },
   button: {
     alignSelf: 'flex-start',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(127,127,127,0.35)',
+    borderColor: PaperColors.borderStrong,
+  },
+  primaryButton: {
+    backgroundColor: PaperColors.sage,
+  },
+  secondaryButton: {
+    backgroundColor: PaperColors.lavender,
   },
   buttonPressed: {
-    opacity: 0.75,
+    transform: [{ translateY: 1 }],
+    opacity: 0.95,
   },
   buttonDisabled: {
     opacity: 0.5,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  buttonText: {
+    fontWeight: '700',
+    color: PaperColors.ink,
+  },
+  monoBlock: {
+    borderWidth: 1,
+    borderColor: PaperColors.border,
+    borderRadius: 14,
+    backgroundColor: PaperColors.paper,
+    padding: 12,
+  },
+  monoText: {
+    fontFamily: 'monospace',
+    color: PaperColors.ink,
+    opacity: 0.9,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  error: {
+    color: PaperColors.error,
+  },
+  entryRow: {
+    borderWidth: 1,
+    borderColor: PaperColors.border,
+    backgroundColor: PaperColors.paper,
+    borderRadius: 16,
+    padding: 12,
+    gap: 4,
+  },
+  entryRowPressed: {
+    opacity: 0.95,
+    transform: [{ translateY: 1 }],
+  },
+  entryDate: {
+    color: PaperColors.ink,
+    opacity: 0.65,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  entryTitle: {
+    color: PaperColors.ink,
+    fontWeight: '800',
+    fontSize: 16,
+  },
+  entryPreview: {
+    color: PaperColors.ink,
+    opacity: 0.75,
+    lineHeight: 18,
   },
 });

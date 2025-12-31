@@ -35,18 +35,32 @@ export async function apiFetch<T>(
       `If you're on a physical device, 'localhost' points to the phone, not your PC. ` +
       `Also ensure your Azure Functions host is running and reachable on port 7071.`;
 
-    throw new Error(hint);
+    throw new Error(`${hint} Original error: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: any = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
 
   if (!res.ok) {
-    const msg =
-      (data && (data.error as string)) ||
-      `Request failed (${res.status})`;
+    const baseMsg = (data && typeof data.error === "string" && data.error) || `Request failed (${res.status})`;
+
+    // Include helpful debug context if the API provided it.
+    const extras: string[] = [];
+    if (data && typeof data.relationshipId === "string") extras.push(`currentRelationshipId=${data.relationshipId}`);
+    if (data && typeof data.inviteRelationshipId === "string") extras.push(`inviteRelationshipId=${data.inviteRelationshipId}`);
+    if (data && typeof data.currentMemberCount === "number") extras.push(`currentMemberCount=${data.currentMemberCount}`);
+
+    const msg = extras.length ? `${baseMsg} (${extras.join(", ")})` : baseMsg;
     throw new Error(msg);
   }
 
-  return data as T;
+  // If parsing failed but response was OK, return the raw text.
+  return (data ?? text) as T;
 }
