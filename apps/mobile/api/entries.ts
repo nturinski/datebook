@@ -9,6 +9,17 @@ export type TimelineEntry = {
   body: string | null;
   createdAt: string;
   updatedAt: string;
+  // Present on GET /entries/:id (detail). Not included in timeline list responses.
+  media?: {
+    id: string;
+    blobKey: string;
+    kind: string;
+    width: number;
+    height: number;
+    createdAt: string;
+    url: string;
+    expiresAt?: string;
+  }[];
 };
 
 export type ListEntriesResponse =

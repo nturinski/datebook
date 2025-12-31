@@ -152,6 +152,12 @@ export type UploadUrlResult = {
   expiresAt: string;
 };
 
+export type ReadUrlResult = {
+  url: string;
+  blobKey: string;
+  expiresAt: string;
+};
+
 export async function createUploadUrl(args: {
   blobKey: string;
   contentType?: string;
@@ -185,6 +191,42 @@ export async function createUploadUrl(args: {
 
   return {
     uploadUrl,
+    blobKey: args.blobKey,
+    expiresAt: expiresOn.toISOString(),
+  };
+}
+
+export async function createReadUrl(args: {
+  blobKey: string;
+  expiresInMinutes?: number;
+}): Promise<ReadUrlResult> {
+  const { config, service, ensureContainer } = getClient();
+  await ensureContainer();
+
+  const expiresInMinutes = args.expiresInMinutes ?? 15;
+  const now = new Date();
+  const startsOn = new Date(now.getTime() - 60_000);
+  const expiresOn = new Date(now.getTime() + expiresInMinutes * 60_000);
+
+  const permissions = BlobSASPermissions.parse("r");
+
+  const credential = new StorageSharedKeyCredential(config.accountName, config.accountKey);
+  const sas = generateBlobSASQueryParameters(
+    {
+      containerName: config.containerName,
+      blobName: args.blobKey,
+      permissions,
+      startsOn,
+      expiresOn,
+    },
+    credential
+  ).toString();
+
+  const blobClient = service.getContainerClient(config.containerName).getBlobClient(args.blobKey);
+  const url = `${blobClient.url}?${sas}`;
+
+  return {
+    url,
     blobKey: args.blobKey,
     expiresAt: expiresOn.toISOString(),
   };
