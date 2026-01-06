@@ -62,9 +62,16 @@ function getPool(): Pool {
 
     validateDatabaseUrl(databaseUrl);
 
+    // Ensure we're consistently querying the intended schema.
+    // Postgres defaults search_path to "$user", public. If a schema exists matching the DB user
+    // and contains a same-named table, queries may unexpectedly hit that schema.
+    // The Datebook app expects tables in public.
+    const searchPath = process.env.PG_SEARCH_PATH ?? "public";
+
     pool = new Pool({
         connectionString: databaseUrl,
         ssl: sslFromConnectionString(databaseUrl),
+        options: `-c search_path=${searchPath}`,
         // A small pool is usually enough for Functions and helps avoid connection storms.
         max: Number(process.env.PGPOOL_MAX ?? "5"),
         idleTimeoutMillis: Number(process.env.PGPOOL_IDLE_TIMEOUT_MS ?? "30000"),

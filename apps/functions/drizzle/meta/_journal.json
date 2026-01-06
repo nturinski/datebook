@@ -78,6 +78,90 @@
       "when": 1767161856631,
       "tag": "0010_little_daimon_hellstrom",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1767637479130,
+      "tag": "0011_daffy_dragon_lord",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1767645000000,
+      "tag": "0012_calm_scrapbook_pages",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1767648000000,
+      "tag": "0013_fix_scrapbook_pages_updated_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1767651000000,
+      "tag": "0014_fix_scrapbook_pages_created_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1767651600000,
+      "tag": "0015_renumber_scrapbook_pages",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1767652200000,
+      "tag": "0016_cleanup_scrapbook_pages_null_relationship",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1767654000000,
+      "tag": "0017_scrapbook_page_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1767654600000,
+      "tag": "0018_fluffy_beyonder",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1767741000000,
+      "tag": "0019_scrapbook_page_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1767741100000,
+      "tag": "0020_fix_scrapbook_page_details_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1767741200000,
+      "tag": "0021_scrapbook_page_details_place_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1767741300000,
+      "tag": "0022_scrapbook_details",
+      "breakpoints": true
     }
   ]
 }
