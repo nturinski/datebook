@@ -9,6 +9,7 @@
     "DEV_ADMIN_MODE": "true",
 
     "GOOGLE_CLIENT_IDS": "<comma-separated-google-oauth-client-ids>",
+    "GOOGLE_MAPS_API_KEY": "<google-maps-places-api-key>",
     "JWT_SECRET": "<dev-only-secret-at-least-32-chars>",
 
     "MEDIA_STORAGE_CONNECTION_STRING": "DefaultEndpointsProtocol=https;AccountName=<account>;AccountKey=<key>;EndpointSuffix=core.windows.net",

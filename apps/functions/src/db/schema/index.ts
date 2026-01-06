@@ -3,3 +3,8 @@ export * from "./users";
 export * from "./relationships";
 export * from "./entries";
 export * from "./entryMedia";
+export * from "./scrapbooks";
+export * from "./scrapbookPages";
+export * from "./scrapbookPageMedia";
+export * from "./scrapbookPageNotes";
+export * from "./scrapbookPageStickers";

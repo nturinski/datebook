@@ -40,6 +40,16 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
+        name="scrapbooks"
+        options={{
+          title: 'Scrapbooks',
+          tabBarIcon: ({ color, focused, size }) => (
+            <FontAwesome name={focused ? 'book' : 'book'} size={size ?? 28} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
         name="relationships"
         options={{
           title: 'Relationships',
