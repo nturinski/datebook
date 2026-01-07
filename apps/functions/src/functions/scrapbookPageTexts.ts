@@ -4,27 +4,42 @@ import { z } from "zod";
 
 import { requireRelationshipMember } from "../auth/requireRelationshipMember";
 import { db } from "../db/client";
-import { scrapbookPageNotes } from "../db/schema/scrapbookPageNotes";
 import { scrapbookPages } from "../db/schema/scrapbookPages";
+import { scrapbookPageTexts } from "../db/schema/scrapbookPageTexts";
 import { scrapbooks } from "../db/schema/scrapbooks";
 import { corsHeaders, handleCorsPreflight } from "../lib/cors";
 
-const NoteColorSchema = z.enum(["yellow", "pink", "blue", "purple"]);
+const TextFontSchema = z.enum(["hand", "script", "marker", "print", "justAnotherHand"]);
 
-const CreateNoteBodySchema = z.object({
-  text: z.string().max(5000).default(""),
-  color: NoteColorSchema.default("yellow"),
-  // Normalized 0..1 within the canvas.
-  x: z.number().min(0).max(1).optional(),
-  y: z.number().min(0).max(1).optional(),
+const ColorSchema = z
+  .string()
+  .min(1)
+  .max(32)
+  .regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
+
+const CreateTextBodySchema = z.object({
+  text: z.string().max(2000).optional(),
+  font: TextFontSchema.optional(),
+  color: ColorSchema.optional(),
+  // Normalized position. Historically this was clamped 0..1 (fully within canvas).
+  // We allow overshoot so text can hang off the page.
+  x: z.number().min(-2).max(3).optional(),
+  y: z.number().min(-2).max(3).optional(),
+  // Visual scale multiplier.
+  scale: z.number().min(0.25).max(6).optional(),
+  // Degrees.
+  rotation: z.number().min(-3600).max(3600).optional(),
 });
 
-const PatchNoteBodySchema = z
+const PatchTextBodySchema = z
   .object({
-    text: z.string().max(5000).optional(),
-    color: NoteColorSchema.optional(),
-    x: z.number().min(0).max(1).optional(),
-    y: z.number().min(0).max(1).optional(),
+    text: z.string().max(2000).optional(),
+    font: TextFontSchema.optional(),
+    color: ColorSchema.optional(),
+    x: z.number().min(-2).max(3).optional(),
+    y: z.number().min(-2).max(3).optional(),
+    scale: z.number().min(0.25).max(6).optional(),
+    rotation: z.number().min(-3600).max(3600).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: "Empty patch" });
 
@@ -72,9 +87,9 @@ async function assertPageOr404(args: {
   return { ok: true as const };
 }
 
-app.http("scrapbookPageNotes", {
+app.http("scrapbookPageTexts", {
   methods: ["GET", "POST", "OPTIONS"],
-  route: "scrapbooks/{id}/pages/{pageId}/notes",
+  route: "scrapbooks/{id}/pages/{pageId}/texts",
   authLevel: "anonymous",
   handler: async (req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> => {
     const preflight = handleCorsPreflight(req);
@@ -101,7 +116,7 @@ app.http("scrapbookPageNotes", {
 
       if (req.method === "POST") {
         const raw = await req.json().catch(() => null);
-        const parsed = CreateNoteBodySchema.safeParse(raw);
+        const parsed = CreateTextBodySchema.safeParse(raw);
         if (!parsed.success) {
           return {
             status: 400,
@@ -111,66 +126,77 @@ app.http("scrapbookPageNotes", {
         }
 
         const inserted = await db
-          .insert(scrapbookPageNotes)
+          .insert(scrapbookPageTexts)
           .values({
             relationshipId: member.relationshipId,
             scrapbookId,
             pageId,
-            text: parsed.data.text,
-            color: parsed.data.color,
-            x: typeof parsed.data.x === "number" ? parsed.data.x : 0.15,
-            y: typeof parsed.data.y === "number" ? parsed.data.y : 0.15,
+            text: typeof parsed.data.text === "string" ? parsed.data.text : "Text",
+            font: typeof parsed.data.font === "string" ? parsed.data.font : "hand",
+            color: typeof parsed.data.color === "string" ? parsed.data.color : "#2E2A27",
+            x: typeof parsed.data.x === "number" ? parsed.data.x : 0.12,
+            y: typeof parsed.data.y === "number" ? parsed.data.y : 0.12,
+            scale: typeof parsed.data.scale === "number" ? parsed.data.scale : 1,
+            rotation: typeof parsed.data.rotation === "number" ? parsed.data.rotation : 0,
             updatedAt: new Date(),
           })
           .returning({
-            id: scrapbookPageNotes.id,
-            text: scrapbookPageNotes.text,
-            color: scrapbookPageNotes.color,
-            x: scrapbookPageNotes.x,
-            y: scrapbookPageNotes.y,
-            createdAt: scrapbookPageNotes.createdAt,
-            updatedAt: scrapbookPageNotes.updatedAt,
+            id: scrapbookPageTexts.id,
+            text: scrapbookPageTexts.text,
+            font: scrapbookPageTexts.font,
+            color: scrapbookPageTexts.color,
+            x: scrapbookPageTexts.x,
+            y: scrapbookPageTexts.y,
+            scale: scrapbookPageTexts.scale,
+            rotation: scrapbookPageTexts.rotation,
+            createdAt: scrapbookPageTexts.createdAt,
+            updatedAt: scrapbookPageTexts.updatedAt,
           });
 
-        const n = inserted[0]!;
+        const t = inserted[0]!;
         return {
           status: 201,
           headers: corsHeaders(req),
           jsonBody: {
             ok: true,
-            note: {
-              id: n.id,
-              text: n.text,
-              color: n.color,
-              x: n.x,
-              y: n.y,
-              createdAt: n.createdAt.toISOString(),
-              updatedAt: n.updatedAt.toISOString(),
+            text: {
+              id: t.id,
+              text: t.text,
+              font: t.font,
+              color: t.color,
+              x: t.x,
+              y: t.y,
+              scale: t.scale,
+              rotation: t.rotation,
+              createdAt: t.createdAt.toISOString(),
+              updatedAt: t.updatedAt.toISOString(),
             },
           },
         };
       }
 
-      // GET list
-      const notes = await db
+      const texts = await db
         .select({
-          id: scrapbookPageNotes.id,
-          text: scrapbookPageNotes.text,
-          color: scrapbookPageNotes.color,
-          x: scrapbookPageNotes.x,
-          y: scrapbookPageNotes.y,
-          createdAt: scrapbookPageNotes.createdAt,
-          updatedAt: scrapbookPageNotes.updatedAt,
+          id: scrapbookPageTexts.id,
+          text: scrapbookPageTexts.text,
+          font: scrapbookPageTexts.font,
+          color: scrapbookPageTexts.color,
+          x: scrapbookPageTexts.x,
+          y: scrapbookPageTexts.y,
+          scale: scrapbookPageTexts.scale,
+          rotation: scrapbookPageTexts.rotation,
+          createdAt: scrapbookPageTexts.createdAt,
+          updatedAt: scrapbookPageTexts.updatedAt,
         })
-        .from(scrapbookPageNotes)
+        .from(scrapbookPageTexts)
         .where(
           and(
-            eq(scrapbookPageNotes.relationshipId, member.relationshipId),
-            eq(scrapbookPageNotes.scrapbookId, scrapbookId),
-            eq(scrapbookPageNotes.pageId, pageId)
+            eq(scrapbookPageTexts.relationshipId, member.relationshipId),
+            eq(scrapbookPageTexts.scrapbookId, scrapbookId),
+            eq(scrapbookPageTexts.pageId, pageId)
           )
         )
-        .orderBy(asc(scrapbookPageNotes.createdAt), asc(scrapbookPageNotes.id))
+        .orderBy(asc(scrapbookPageTexts.createdAt), asc(scrapbookPageTexts.id))
         .limit(500);
 
       return {
@@ -178,14 +204,17 @@ app.http("scrapbookPageNotes", {
         headers: corsHeaders(req),
         jsonBody: {
           ok: true,
-          notes: notes.map((n) => ({
-            id: n.id,
-            text: n.text,
-            color: n.color,
-            x: n.x,
-            y: n.y,
-            createdAt: n.createdAt.toISOString(),
-            updatedAt: n.updatedAt.toISOString(),
+          texts: texts.map((t) => ({
+            id: t.id,
+            text: t.text,
+            font: t.font,
+            color: t.color,
+            x: t.x,
+            y: t.y,
+            scale: t.scale,
+            rotation: t.rotation,
+            createdAt: t.createdAt.toISOString(),
+            updatedAt: t.updatedAt.toISOString(),
           })),
         },
       };
@@ -200,9 +229,9 @@ app.http("scrapbookPageNotes", {
   },
 });
 
-app.http("scrapbookPageNotesById", {
+app.http("scrapbookPageTextsById", {
   methods: ["PATCH", "DELETE", "OPTIONS"],
-  route: "scrapbooks/{id}/pages/{pageId}/notes/{noteId}",
+  route: "scrapbooks/{id}/pages/{pageId}/texts/{textId}",
   authLevel: "anonymous",
   handler: async (req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> => {
     const preflight = handleCorsPreflight(req);
@@ -210,8 +239,8 @@ app.http("scrapbookPageNotesById", {
 
     const scrapbookId = req.params.id;
     const pageId = req.params.pageId;
-    const noteId = req.params.noteId;
-    if (!scrapbookId || !pageId || !noteId) {
+    const textId = req.params.textId;
+    if (!scrapbookId || !pageId || !textId) {
       return { status: 400, headers: corsHeaders(req), jsonBody: { ok: false, error: "Missing id" } };
     }
 
@@ -230,16 +259,16 @@ app.http("scrapbookPageNotesById", {
 
       if (req.method === "DELETE") {
         const deleted = await db
-          .delete(scrapbookPageNotes)
+          .delete(scrapbookPageTexts)
           .where(
             and(
-              eq(scrapbookPageNotes.id, noteId),
-              eq(scrapbookPageNotes.pageId, pageId),
-              eq(scrapbookPageNotes.scrapbookId, scrapbookId),
-              eq(scrapbookPageNotes.relationshipId, member.relationshipId)
+              eq(scrapbookPageTexts.id, textId),
+              eq(scrapbookPageTexts.pageId, pageId),
+              eq(scrapbookPageTexts.scrapbookId, scrapbookId),
+              eq(scrapbookPageTexts.relationshipId, member.relationshipId)
             )
           )
-          .returning({ id: scrapbookPageNotes.id });
+          .returning({ id: scrapbookPageTexts.id });
 
         if (!deleted[0]) {
           return { status: 404, headers: corsHeaders(req), jsonBody: { ok: false, error: "Not found" } };
@@ -248,9 +277,8 @@ app.http("scrapbookPageNotesById", {
         return { status: 200, headers: corsHeaders(req), jsonBody: { ok: true } };
       }
 
-      // PATCH
       const raw = await req.json().catch(() => null);
-      const parsed = PatchNoteBodySchema.safeParse(raw);
+      const parsed = PatchTextBodySchema.safeParse(raw);
       if (!parsed.success) {
         return {
           status: 400,
@@ -259,37 +287,43 @@ app.http("scrapbookPageNotesById", {
         };
       }
 
-      const patch: Partial<typeof scrapbookPageNotes.$inferInsert> = {
+      const patch: Partial<typeof scrapbookPageTexts.$inferInsert> = {
         ...(typeof parsed.data.text === "string" ? { text: parsed.data.text } : {}),
+        ...(typeof parsed.data.font === "string" ? { font: parsed.data.font } : {}),
         ...(typeof parsed.data.color === "string" ? { color: parsed.data.color } : {}),
         ...(typeof parsed.data.x === "number" ? { x: parsed.data.x } : {}),
         ...(typeof parsed.data.y === "number" ? { y: parsed.data.y } : {}),
+        ...(typeof parsed.data.scale === "number" ? { scale: parsed.data.scale } : {}),
+        ...(typeof parsed.data.rotation === "number" ? { rotation: parsed.data.rotation } : {}),
         updatedAt: new Date(),
       };
 
       const updated = await db
-        .update(scrapbookPageNotes)
+        .update(scrapbookPageTexts)
         .set(patch)
         .where(
           and(
-            eq(scrapbookPageNotes.id, noteId),
-            eq(scrapbookPageNotes.pageId, pageId),
-            eq(scrapbookPageNotes.scrapbookId, scrapbookId),
-            eq(scrapbookPageNotes.relationshipId, member.relationshipId)
+            eq(scrapbookPageTexts.id, textId),
+            eq(scrapbookPageTexts.pageId, pageId),
+            eq(scrapbookPageTexts.scrapbookId, scrapbookId),
+            eq(scrapbookPageTexts.relationshipId, member.relationshipId)
           )
         )
         .returning({
-          id: scrapbookPageNotes.id,
-          text: scrapbookPageNotes.text,
-          color: scrapbookPageNotes.color,
-          x: scrapbookPageNotes.x,
-          y: scrapbookPageNotes.y,
-          createdAt: scrapbookPageNotes.createdAt,
-          updatedAt: scrapbookPageNotes.updatedAt,
+          id: scrapbookPageTexts.id,
+          text: scrapbookPageTexts.text,
+          font: scrapbookPageTexts.font,
+          color: scrapbookPageTexts.color,
+          x: scrapbookPageTexts.x,
+          y: scrapbookPageTexts.y,
+          scale: scrapbookPageTexts.scale,
+          rotation: scrapbookPageTexts.rotation,
+          createdAt: scrapbookPageTexts.createdAt,
+          updatedAt: scrapbookPageTexts.updatedAt,
         });
 
-      const n = updated[0];
-      if (!n) {
+      const t = updated[0];
+      if (!t) {
         return { status: 404, headers: corsHeaders(req), jsonBody: { ok: false, error: "Not found" } };
       }
 
@@ -298,14 +332,17 @@ app.http("scrapbookPageNotesById", {
         headers: corsHeaders(req),
         jsonBody: {
           ok: true,
-          note: {
-            id: n.id,
-            text: n.text,
-            color: n.color,
-            x: n.x,
-            y: n.y,
-            createdAt: n.createdAt.toISOString(),
-            updatedAt: n.updatedAt.toISOString(),
+          text: {
+            id: t.id,
+            text: t.text,
+            font: t.font,
+            color: t.color,
+            x: t.x,
+            y: t.y,
+            scale: t.scale,
+            rotation: t.rotation,
+            createdAt: t.createdAt.toISOString(),
+            updatedAt: t.updatedAt.toISOString(),
           },
         },
       };

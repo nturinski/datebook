@@ -34,9 +34,10 @@ const StickerKindSchema = z.enum([
 
 const CreateStickerBodySchema = z.object({
   kind: StickerKindSchema,
-  // Normalized 0..1 within the canvas.
-  x: z.number().min(0).max(1).optional(),
-  y: z.number().min(0).max(1).optional(),
+  // Normalized position. Historically this was clamped 0..1 (fully within canvas).
+  // We now allow a small overshoot so stickers can hang off the page while keeping a corner visible.
+  x: z.number().min(-2).max(3).optional(),
+  y: z.number().min(-2).max(3).optional(),
   // Visual scale multiplier.
   scale: z.number().min(0.25).max(4).optional(),
   // Degrees.
@@ -45,8 +46,8 @@ const CreateStickerBodySchema = z.object({
 
 const PatchStickerBodySchema = z
   .object({
-    x: z.number().min(0).max(1).optional(),
-    y: z.number().min(0).max(1).optional(),
+    x: z.number().min(-2).max(3).optional(),
+    y: z.number().min(-2).max(3).optional(),
     scale: z.number().min(0.25).max(4).optional(),
     rotation: z.number().min(-3600).max(3600).optional(),
   })

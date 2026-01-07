@@ -4,8 +4,8 @@ import { relationships } from "./relationships";
 import { scrapbookPages } from "./scrapbookPages";
 import { scrapbooks } from "./scrapbooks";
 
-export const scrapbookPageNotes = pgTable(
-  "scrapbook_page_notes",
+export const scrapbookPageTexts = pgTable(
+  "scrapbook_page_texts",
   {
     id: uuid("id").defaultRandom().primaryKey(),
 
@@ -21,21 +21,34 @@ export const scrapbookPageNotes = pgTable(
       .notNull()
       .references(() => scrapbookPages.id, { onDelete: "cascade" }),
 
+    // User-visible text.
     text: text("text").notNull(),
 
-    // One of 3 preset styles (pastel options). We store it as a string so we can evolve later.
-    color: text("color").notNull(),
+    // A small set of font style IDs (kept as text for forward-compat).
+    font: text("font").notNull().default("hand"),
 
-    // Normalized (0..1) position within the page canvas.
+    // CSS-ish color string (e.g. "#2E2A27").
+    color: text("color").notNull().default("#2E2A27"),
+
+    // Normalized (0..1) position within the page canvas. Values may overshoot slightly.
     x: doublePrecision("x").notNull().default(0),
     y: doublePrecision("y").notNull().default(0),
+
+    // Visual scale multiplier (1 = default size).
+    scale: doublePrecision("scale").notNull().default(1),
+
+    // Rotation in degrees.
+    rotation: doublePrecision("rotation").notNull().default(0),
 
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
   },
   (t) => ({
-    pageIdCreatedAtIdx: index("scrapbook_page_notes_page_id_created_at_idx").on(t.pageId, t.createdAt),
-    scrapbookIdCreatedAtIdx: index("scrapbook_page_notes_scrapbook_id_created_at_idx").on(t.scrapbookId, t.createdAt),
-    relationshipIdCreatedAtIdx: index("scrapbook_page_notes_relationship_id_created_at_idx").on(t.relationshipId, t.createdAt),
+    pageIdCreatedAtIdx: index("scrapbook_page_texts_page_id_created_at_idx").on(t.pageId, t.createdAt),
+    scrapbookIdCreatedAtIdx: index("scrapbook_page_texts_scrapbook_id_created_at_idx").on(t.scrapbookId, t.createdAt),
+    relationshipIdCreatedAtIdx: index("scrapbook_page_texts_relationship_id_created_at_idx").on(
+      t.relationshipId,
+      t.createdAt
+    ),
   })
 );
