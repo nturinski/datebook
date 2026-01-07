@@ -4,6 +4,7 @@ export type ScrapbookPageMedia = {
   id: string;
   kind: 'photo' | string;
   blobKey: string;
+  createdByUserId: string;
   url?: string;
   expiresAt?: string;
   width: number;

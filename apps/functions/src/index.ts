@@ -14,6 +14,8 @@ import './functions/scrapbooks';
 import './functions/scrapbookPages';
 import './functions/scrapbookPageStickers';
 import './functions/scrapbookPageTexts';
+import './functions/coupons';
+import './functions/pushTokens';
 import './functions/users';
 import './functions/users-list';
 

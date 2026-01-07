@@ -8,6 +8,7 @@
 			"problemMatcher": "$func-node-watch",
 			"isBackground": true,
 			"dependsOn": "pnpm watch (functions)",
+			"dependsOrder": "sequence",
 			"options": {
 				"cwd": "${workspaceFolder}/apps\\functions"
 			}

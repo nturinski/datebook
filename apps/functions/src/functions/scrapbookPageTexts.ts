@@ -131,6 +131,7 @@ app.http("scrapbookPageTexts", {
             relationshipId: member.relationshipId,
             scrapbookId,
             pageId,
+            createdByUserId: member.userId,
             text: typeof parsed.data.text === "string" ? parsed.data.text : "Text",
             font: typeof parsed.data.font === "string" ? parsed.data.font : "hand",
             color: typeof parsed.data.color === "string" ? parsed.data.color : "#2E2A27",
@@ -142,6 +143,7 @@ app.http("scrapbookPageTexts", {
           })
           .returning({
             id: scrapbookPageTexts.id,
+            createdByUserId: scrapbookPageTexts.createdByUserId,
             text: scrapbookPageTexts.text,
             font: scrapbookPageTexts.font,
             color: scrapbookPageTexts.color,
@@ -161,6 +163,7 @@ app.http("scrapbookPageTexts", {
             ok: true,
             text: {
               id: t.id,
+              createdByUserId: t.createdByUserId,
               text: t.text,
               font: t.font,
               color: t.color,
@@ -178,6 +181,7 @@ app.http("scrapbookPageTexts", {
       const texts = await db
         .select({
           id: scrapbookPageTexts.id,
+          createdByUserId: scrapbookPageTexts.createdByUserId,
           text: scrapbookPageTexts.text,
           font: scrapbookPageTexts.font,
           color: scrapbookPageTexts.color,
@@ -206,6 +210,7 @@ app.http("scrapbookPageTexts", {
           ok: true,
           texts: texts.map((t) => ({
             id: t.id,
+            createdByUserId: t.createdByUserId,
             text: t.text,
             font: t.font,
             color: t.color,
@@ -311,6 +316,7 @@ app.http("scrapbookPageTextsById", {
         )
         .returning({
           id: scrapbookPageTexts.id,
+          createdByUserId: scrapbookPageTexts.createdByUserId,
           text: scrapbookPageTexts.text,
           font: scrapbookPageTexts.font,
           color: scrapbookPageTexts.color,
@@ -334,6 +340,7 @@ app.http("scrapbookPageTextsById", {
           ok: true,
           text: {
             id: t.id,
+            createdByUserId: t.createdByUserId,
             text: t.text,
             font: t.font,
             color: t.color,

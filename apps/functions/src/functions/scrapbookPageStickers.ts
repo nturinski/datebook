@@ -141,6 +141,7 @@ app.http("scrapbookPageStickers", {
             relationshipId: member.relationshipId,
             scrapbookId,
             pageId,
+            createdByUserId: member.userId,
             kind: parsed.data.kind,
             x: typeof parsed.data.x === "number" ? parsed.data.x : 0.12,
             y: typeof parsed.data.y === "number" ? parsed.data.y : 0.12,
@@ -150,6 +151,7 @@ app.http("scrapbookPageStickers", {
           })
           .returning({
             id: scrapbookPageStickers.id,
+            createdByUserId: scrapbookPageStickers.createdByUserId,
             kind: scrapbookPageStickers.kind,
             x: scrapbookPageStickers.x,
             y: scrapbookPageStickers.y,
@@ -167,6 +169,7 @@ app.http("scrapbookPageStickers", {
             ok: true,
             sticker: {
               id: s.id,
+              createdByUserId: s.createdByUserId,
               kind: s.kind,
               x: s.x,
               y: s.y,
@@ -183,6 +186,7 @@ app.http("scrapbookPageStickers", {
       const stickers = await db
         .select({
           id: scrapbookPageStickers.id,
+          createdByUserId: scrapbookPageStickers.createdByUserId,
           kind: scrapbookPageStickers.kind,
           x: scrapbookPageStickers.x,
           y: scrapbookPageStickers.y,
@@ -209,6 +213,7 @@ app.http("scrapbookPageStickers", {
           ok: true,
           stickers: stickers.map((s) => ({
             id: s.id,
+            createdByUserId: s.createdByUserId,
             kind: s.kind,
             x: s.x,
             y: s.y,
@@ -310,6 +315,7 @@ app.http("scrapbookPageStickersById", {
         )
         .returning({
           id: scrapbookPageStickers.id,
+          createdByUserId: scrapbookPageStickers.createdByUserId,
           kind: scrapbookPageStickers.kind,
           x: scrapbookPageStickers.x,
           y: scrapbookPageStickers.y,
@@ -331,6 +337,7 @@ app.http("scrapbookPageStickersById", {
           ok: true,
           sticker: {
             id: s.id,
+            createdByUserId: s.createdByUserId,
             kind: s.kind,
             x: s.x,
             y: s.y,

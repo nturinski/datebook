@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 
 import type { ScrapbookPageText, ScrapbookTextFont } from '@/api/scrapbookTexts';
+import { AttributionBadge } from '@/components/scrapbook/AttributionBadge';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -82,13 +83,24 @@ function DraggableText(props: {
   stageHeight: number;
   isActive: boolean;
   zIndex: number;
+  badgeText?: string;
   onActivate: (textId: string) => void;
   onPress: (textId: string) => void;
   onTransformChanged: (args: { textId: string; x: number; y: number; scale: number }) => void;
   onTransformCommitted: (args: { textId: string; x: number; y: number; scale: number }) => Promise<void>;
 }) {
-  const { item, stageWidth, stageHeight, isActive, zIndex, onActivate, onPress, onTransformChanged, onTransformCommitted } =
-    props;
+  const {
+    item,
+    stageWidth,
+    stageHeight,
+    isActive,
+    zIndex,
+    badgeText,
+    onActivate,
+    onPress,
+    onTransformChanged,
+    onTransformCommitted,
+  } = props;
 
   const pan = useRef(new Animated.ValueXY()).current;
   const dragging = useRef(false);
@@ -364,6 +376,10 @@ function DraggableText(props: {
     >
       <View style={styles.textHitbox} {...panResponder.panHandlers} collapsable={false}>
         <View style={[styles.textCard, isActive && styles.textCardActive]}>
+          {badgeText && isActive ? (
+            <AttributionBadge text={badgeText} size={18} counterRotationDeg={-rotation} style={styles.attributionBadge} />
+          ) : null}
+
           <Text
             selectable={false}
             numberOfLines={3}
@@ -402,6 +418,7 @@ export function TextLayer(props: {
   style?: StyleProp<ViewStyle>;
   activeTextId?: string | null;
   onActiveTextIdChange?: (textId: string | null) => void;
+  getContributorInitials?: (userId: string) => string;
   onTextPressed: (textId: string) => void;
   onTransformChanged: (args: { textId: string; x: number; y: number; scale: number }) => void;
   onTransformCommitted: (args: { textId: string; x: number; y: number; scale: number }) => Promise<void>;
@@ -413,6 +430,7 @@ export function TextLayer(props: {
     style,
     activeTextId: controlledActiveTextId,
     onActiveTextIdChange,
+    getContributorInitials,
     onTextPressed,
     onTransformChanged,
     onTransformCommitted,
@@ -431,6 +449,7 @@ export function TextLayer(props: {
       {texts.map((t) => {
         const isActive = activeTextId === t.id;
         const zIndex = isActive ? 2000 : 1;
+        const badgeText = typeof getContributorInitials === 'function' ? getContributorInitials(t.createdByUserId) : undefined;
         return (
           <DraggableText
             key={t.id}
@@ -439,6 +458,7 @@ export function TextLayer(props: {
             stageHeight={stageHeight}
             isActive={isActive}
             zIndex={TEXT_Z_BASE + zIndex}
+            badgeText={badgeText}
             onActivate={(textId) => setActiveTextId(textId)}
             onPress={(textId) => {
               setActiveTextId(textId);
@@ -487,6 +507,11 @@ const styles = StyleSheet.create({
   },
   text: {
     fontWeight: Platform.select({ ios: '600', default: '700' }) as any,
+  },
+  attributionBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
   },
   resizeHandle: {
     position: 'absolute',

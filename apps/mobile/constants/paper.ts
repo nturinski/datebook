@@ -5,6 +5,8 @@ export const PaperColors = {
   paper: "#F6EFE6", // cream paper
   sand: "#E9DDCF", // warm sand
   ink: "#2E2A27", // charcoal-ish
+  ink60: "rgba(46,42,39,0.60)",
+  ink50: "rgba(46,42,39,0.50)",
   lavender: "#C9C3E6", // muted lavender
   sage: "#C7D7C4", // sage green
 

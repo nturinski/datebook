@@ -194,6 +194,7 @@ app.http("scrapbookPages", {
               .select({
                 id: scrapbookPageMedia.id,
                 pageId: scrapbookPageMedia.pageId,
+                createdByUserId: scrapbookPageMedia.createdByUserId,
                 blobKey: scrapbookPageMedia.blobKey,
                 kind: scrapbookPageMedia.kind,
                 width: scrapbookPageMedia.width,
@@ -238,6 +239,7 @@ app.http("scrapbookPages", {
                 x: m.x,
                 y: m.y,
                 scale: m.scale,
+                createdByUserId: m.createdByUserId,
                 createdAt: m.createdAt.toISOString(),
               };
             })
@@ -473,6 +475,7 @@ app.http("scrapbookPageAttachMedia", {
           relationshipId: member.relationshipId,
           scrapbookId,
           pageId,
+          createdByUserId: member.userId,
           blobKey: parsed.data.blobKey,
           kind: parsed.data.kind,
           width: parsed.data.width,
@@ -481,6 +484,7 @@ app.http("scrapbookPageAttachMedia", {
         .returning({
           id: scrapbookPageMedia.id,
           pageId: scrapbookPageMedia.pageId,
+          createdByUserId: scrapbookPageMedia.createdByUserId,
           blobKey: scrapbookPageMedia.blobKey,
           kind: scrapbookPageMedia.kind,
           width: scrapbookPageMedia.width,

@@ -24,6 +24,7 @@ export type ScrapbookStickerKind =
 
 export type ScrapbookPageSticker = {
   id: string;
+  createdByUserId: string;
   kind: ScrapbookStickerKind;
   x: number;
   y: number;

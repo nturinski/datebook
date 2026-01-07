@@ -3,6 +3,7 @@ import { doublePrecision, index, integer, pgTable, text, timestamp, uuid } from 
 import { relationships } from "./relationships";
 import { scrapbookPages } from "./scrapbookPages";
 import { scrapbooks } from "./scrapbooks";
+import { users } from "./users";
 
 export const scrapbookPageMedia = pgTable(
   "scrapbook_page_media",
@@ -20,6 +21,10 @@ export const scrapbookPageMedia = pgTable(
     pageId: uuid("page_id")
       .notNull()
       .references(() => scrapbookPages.id, { onDelete: "cascade" }),
+
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
 
     // Path/key of the blob in object storage.
     blobKey: text("blob_key").notNull(),

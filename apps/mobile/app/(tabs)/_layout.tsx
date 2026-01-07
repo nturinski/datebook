@@ -50,6 +50,16 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
+        name="coupons"
+        options={{
+          title: 'Coupons',
+          tabBarIcon: ({ color, focused, size }) => (
+            <FontAwesome name={focused ? 'ticket' : 'ticket'} size={size ?? 28} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
         name="relationships"
         options={{
           title: 'Relationships',
