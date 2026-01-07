@@ -3,6 +3,7 @@ export * from "./users";
 export * from "./relationships";
 export * from "./entries";
 export * from "./entryMedia";
+export * from "./coupons";
 export * from "./scrapbooks";
 export * from "./scrapbookPages";
 export * from "./scrapbookPageMedia";

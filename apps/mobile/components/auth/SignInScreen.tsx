@@ -1,10 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as AppleAuthentication from "expo-apple-authentication";
-import * as AuthSession from "expo-auth-session";
 import { makeRedirectUri } from "expo-auth-session";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
-import Constants from "expo-constants";
 import React, { useMemo, useState } from "react";
 import {
     ActivityIndicator,
@@ -27,13 +25,9 @@ export function SignInScreen({ onSignedIn }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"google" | "apple" | null>(null);
 
-  // In Expo Go, custom-scheme redirects are not reliable.
-  // Additionally, Android dev builds are often not configured to handle Google's
-  // `com.googleusercontent.apps.<id>:/oauthredirect` scheme, which results in the
-  // browser getting stuck on "Please wait" and then falling back to Google.
-  // Using the AuthSession proxy avoids both issues.
-  const isExpoGo = Constants.appOwnership === "expo";
-  const useProxy = isExpoGo || (__DEV__ && Platform.OS === "android");
+  // NOTE: Expo's docs recommend using a Development Build for OAuth.
+  // Expo Go can't reliably support custom schemes (and providers often require
+  // exact redirect URI allowlisting), so consider a dev build if you hit issues.
 
   function googleRedirectUriForClientId(clientId: string | undefined): string | undefined {
     if (!clientId) return undefined;
@@ -46,11 +40,6 @@ export function SignInScreen({ onSignedIn }: Props) {
   }
 
   const redirectUri = useMemo(() => {
-    if (useProxy) {
-      // e.g. https://auth.expo.io/@velikriss/datebook/oauthredirect
-      return makeRedirectUri({ path: "oauthredirect", useProxy: true });
-    }
-
     const native = Platform.select({
       ios: googleRedirectUriForClientId(process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID),
       android: googleRedirectUriForClientId(process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID),
@@ -62,7 +51,7 @@ export function SignInScreen({ onSignedIn }: Props) {
       path: "oauthredirect",
       native,
     });
-  }, [useProxy]);
+  }, []);
 
   // You MUST set these in app config / env for your platforms.
   const googleConfig = useMemo(() => {
@@ -122,7 +111,7 @@ export function SignInScreen({ onSignedIn }: Props) {
       setError(null);
       // iOS: ask for an ephemeral browser session to avoid reusing cookies.
       // Other platforms ignore this option.
-      await promptAsync({ preferEphemeralSession: true, useProxy });
+      await promptAsync({ preferEphemeralSession: true });
     } catch (e: any) {
       setError(e?.message ?? "Google sign-in failed.");
       setBusy(null);
@@ -227,7 +216,7 @@ export function SignInScreen({ onSignedIn }: Props) {
 
           {__DEV__ ? (
             <Text style={styles.footerText}>
-              OAuth redirect: {redirectUri} (proxy={String(useProxy)})
+              OAuth redirect: {redirectUri}
             </Text>
           ) : null}
         </View>

@@ -8,6 +8,9 @@ export const users = pgTable(
     email: text("email").notNull(),
     provider: text("provider"),       // "google" | "apple" (nullable for legacy rows)
     providerSub: text("provider_sub"),// OAuth subject
+    // Expo push token (ExponentPushToken[...]) used for minimal push notifications.
+    // MVP: store a single token per user (last writer wins).
+    expoPushToken: text("expo_push_token"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({

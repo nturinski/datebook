@@ -46,6 +46,7 @@ import { getStickerBaseSizePx, StickersLayer, stickerEmoji } from '@/components/
 import { getTextBaseSizePx, TextLayer } from '@/components/scrapbook/TextLayer';
 import { PaperColors } from '@/constants/paper';
 import { containA4Rect } from '@/lib/layout/a4';
+import { listMyRelationships, type RelationshipMember } from '@/api/relationships';
 import {
   ensurePlacesSessionToken,
   googlePlaceDetails,
@@ -123,6 +124,7 @@ export default function ScrapbookViewer() {
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState<string>('Scrapbook');
   const [relationshipId, setRelationshipId] = useState<string | null>(null);
+  const [relationshipMembersByUserId, setRelationshipMembersByUserId] = useState<Record<string, RelationshipMember>>({});
   const [scrapbookDetails, setScrapbookDetails] = useState<ScrapbookDetails | null>(null);
   const [pages, setPages] = useState<ScrapbookPage[]>([]);
   const [pageCursor, setPageCursor] = useState(0);
@@ -195,6 +197,66 @@ export default function ScrapbookViewer() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!relationshipId) {
+      setRelationshipMembersByUserId({});
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const rels = await listMyRelationships();
+        const rel = rels.find((r) => r.relationshipId === relationshipId) ?? null;
+        const map: Record<string, RelationshipMember> = {};
+        for (const m of rel?.members ?? []) map[m.userId] = m;
+        if (!cancelled) setRelationshipMembersByUserId(map);
+      } catch {
+        // Non-fatal: attribution falls back to short ids.
+        if (!cancelled) setRelationshipMembersByUserId({});
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [relationshipId]);
+
+  const contributorLabelForUserId = useCallback(
+    (userId: string | null | undefined): string => {
+      if (!userId) return 'Unknown';
+      const member = relationshipMembersByUserId[userId];
+      if (member?.email) return member.email;
+      // Fallback: show a short suffix of the UUID.
+      const parts = String(userId).split('-');
+      const suffix = parts[parts.length - 1];
+      return suffix && suffix.length >= 6 ? `User …${suffix.slice(-6)}` : 'Unknown';
+    },
+    [relationshipMembersByUserId]
+  );
+
+  const contributorInitialsForUserId = useCallback(
+    (userId: string | null | undefined): string => {
+      const label = contributorLabelForUserId(userId);
+      const at = label.indexOf('@');
+      const base = (at >= 0 ? label.slice(0, at) : label).trim();
+      if (!base) return '?';
+
+      const tokens = base
+        .split(/[^a-zA-Z0-9]+/g)
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+      const first = tokens[0] ?? base;
+      const second = tokens.length >= 2 ? tokens[1] : '';
+
+      const a = first[0] ?? '?';
+      const b = second[0] ?? (first.length >= 2 ? first[1] : '');
+      return `${a}${b}`.toUpperCase();
+    },
+    [contributorLabelForUserId]
+  );
 
   const ensureFirstPage = useCallback(async () => {
     if (!scrapbookId) return;
@@ -791,6 +853,8 @@ export default function ScrapbookViewer() {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.popoverScrollContent}>
               <Text style={styles.actionSectionLabel}>Text</Text>
 
+              <Text style={styles.attributionLine}>Placed by: {contributorLabelForUserId(textItem.createdByUserId)}</Text>
+
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
@@ -893,6 +957,7 @@ export default function ScrapbookViewer() {
       );
     },
     [
+      contributorLabelForUserId,
       confirmTextDeleteFor,
       deleteText,
       patchTextOptimistic,
@@ -992,6 +1057,8 @@ export default function ScrapbookViewer() {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.popoverScrollContent}>
               <Text style={styles.actionSectionLabel}>Sticker {emoji}</Text>
 
+              <Text style={styles.attributionLine}>Placed by: {contributorLabelForUserId(sticker.createdByUserId)}</Text>
+
               <Pressable
               accessibilityRole="button"
               onPress={() => {
@@ -1063,6 +1130,7 @@ export default function ScrapbookViewer() {
       );
     },
     [
+      contributorLabelForUserId,
       confirmStickerDeleteFor,
       deleteSticker,
       patchStickerOptimistic,
@@ -1342,6 +1410,7 @@ export default function ScrapbookViewer() {
             id: m.id,
             kind: m.kind,
             url: m.url ?? '',
+            createdByUserId: m.createdByUserId,
             width: m.width,
             height: m.height,
             x: m.x,
@@ -1379,6 +1448,21 @@ export default function ScrapbookViewer() {
                       <MemoriesCanvas
                         photos={photos}
                         style={a4Style}
+                        getContributorInitials={contributorInitialsForUserId}
+                        onPhotoPressed={(mediaId) => {
+                          const media = item.media.find((m) => m.id === mediaId) ?? null;
+                          if (!media) return;
+                          const placedBy = contributorLabelForUserId(media.createdByUserId);
+                          setStatus(`Photo placed by ${placedBy}`);
+
+                          // Auto-clear this transient message unless something else has overwritten it.
+                          setTimeout(() => {
+                            setStatus((cur) => {
+                              if (typeof cur === 'string' && cur.startsWith('Photo placed by ')) return null;
+                              return cur;
+                            });
+                          }, 2500);
+                        }}
                         onStagePress={() => {
                           setActiveStickerFor(null);
                           setStickerActionsFor(null);
@@ -1396,6 +1480,7 @@ export default function ScrapbookViewer() {
                               stageWidth={stage.width}
                               stageHeight={stage.height}
                               activeTextId={activeTextFor?.pageId === item.id ? activeTextFor.textId : null}
+                              getContributorInitials={contributorInitialsForUserId}
                               onActiveTextIdChange={(textId) => setActiveTextFor(textId ? { pageId: item.id, textId } : null)}
                               onTextPressed={(textId) => onTextPressed({ pageId: item.id, textId })}
                               onTransformChanged={({ textId, x, y, scale }) =>
@@ -1410,6 +1495,7 @@ export default function ScrapbookViewer() {
                               stageWidth={stage.width}
                               stageHeight={stage.height}
                               activeStickerId={activeStickerFor?.pageId === item.id ? activeStickerFor.stickerId : null}
+                              getContributorInitials={contributorInitialsForUserId}
                               onActiveStickerIdChange={(stickerId) =>
                                 setActiveStickerFor(stickerId ? { pageId: item.id, stickerId } : null)
                               }
@@ -2206,6 +2292,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
+  },
+  attributionLine: {
+    marginTop: 6,
+    marginBottom: 10,
+    color: PaperColors.ink,
+    opacity: 0.7,
+    fontSize: 12,
+    fontWeight: '600',
   },
   actionRowPressed: {
     opacity: 0.92,

@@ -3,6 +3,7 @@ import { doublePrecision, index, pgTable, text, timestamp, uuid } from "drizzle-
 import { relationships } from "./relationships";
 import { scrapbookPages } from "./scrapbookPages";
 import { scrapbooks } from "./scrapbooks";
+import { users } from "./users";
 
 export const scrapbookPageStickers = pgTable(
   "scrapbook_page_stickers",
@@ -20,6 +21,10 @@ export const scrapbookPageStickers = pgTable(
     pageId: uuid("page_id")
       .notNull()
       .references(() => scrapbookPages.id, { onDelete: "cascade" }),
+
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
 
     // One of a small set of sticker IDs (e.g. "heart", "star", "tape").
     kind: text("kind").notNull(),

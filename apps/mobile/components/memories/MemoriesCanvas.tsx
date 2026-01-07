@@ -11,6 +11,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { AttributionBadge } from '@/components/scrapbook/AttributionBadge';
 
 export type MemoryPhoto = {
   id: string;
@@ -21,6 +22,7 @@ export type MemoryPhoto = {
   x?: number;
   y?: number;
   scale?: number;
+  createdByUserId?: string;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -35,6 +37,8 @@ function DraggablePhoto(props: {
   photoHeight: number;
   isActive: boolean;
   zIndex: number;
+  badgeText?: string;
+  onPress?: (mediaId: string) => void;
   onActivate: (mediaId: string) => void;
   onTransformChanged: (args: { mediaId: string; x: number; y: number; scale: number }) => void;
   onTransformCommitted: (args: { mediaId: string; x: number; y: number; scale: number }) => Promise<void>;
@@ -47,6 +51,8 @@ function DraggablePhoto(props: {
     photoHeight,
     isActive,
     zIndex,
+    badgeText,
+    onPress,
     onActivate,
     onTransformChanged,
     onTransformCommitted,
@@ -206,6 +212,7 @@ function DraggablePhoto(props: {
 
           // Tap-to-select should not trigger a save.
           if (!didMove.current && !didResize.current) {
+            onPress?.(photo.id);
             didMove.current = false;
             return;
           }
@@ -350,6 +357,8 @@ function DraggablePhoto(props: {
       <View style={styles.draggablePhotoHitbox} {...panResponder.panHandlers}>
         <Image source={{ uri: photo.url }} style={styles.draggablePhotoImage} resizeMode="cover" />
 
+        {badgeText && isActive ? <AttributionBadge text={badgeText} size={18} style={styles.attributionBadge} /> : null}
+
         {isActive ? (
           <View
             style={styles.resizeHandle}
@@ -370,10 +379,22 @@ export function MemoriesCanvas(props: {
   basePhotoWidth?: number;
   renderOverlay?: (stage: { width: number; height: number }) => ReactNode;
   onStagePress?: () => void;
+  getContributorInitials?: (userId: string | null | undefined) => string;
+  onPhotoPressed?: (mediaId: string) => void;
   onTransformChanged: (args: { mediaId: string; x: number; y: number; scale: number }) => void;
   onTransformCommitted: (args: { mediaId: string; x: number; y: number; scale: number }) => Promise<void>;
 }) {
-  const { photos, style, basePhotoWidth, renderOverlay, onStagePress, onTransformChanged, onTransformCommitted } = props;
+  const {
+    photos,
+    style,
+    basePhotoWidth,
+    renderOverlay,
+    onStagePress,
+    getContributorInitials,
+    onPhotoPressed,
+    onTransformChanged,
+    onTransformCommitted,
+  } = props;
 
   const [stageSize, setStageSize] = useState<{ width: number; height: number } | null>(null);
   const [activeMediaId, setActiveMediaId] = useState<string | null>(null);
@@ -413,6 +434,8 @@ export function MemoriesCanvas(props: {
 
                 const isActive = activeMediaId === m.id;
                 const zIndex = isActive ? 1000 : 1;
+                const badgeText =
+                  typeof getContributorInitials === 'function' ? getContributorInitials(m.createdByUserId) : undefined;
 
                 return (
                   <DraggablePhoto
@@ -424,6 +447,8 @@ export function MemoriesCanvas(props: {
                     photoHeight={photoHeight}
                     isActive={isActive}
                     zIndex={zIndex}
+                    badgeText={badgeText}
+                    onPress={onPhotoPressed}
                     onActivate={(mediaId) => setActiveMediaId(mediaId)}
                     onTransformChanged={onTransformChanged}
                     onTransformCommitted={onTransformCommitted}
@@ -506,5 +531,10 @@ const styles = StyleSheet.create({
     height: 2,
     borderRadius: 1,
     backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  attributionBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
   },
 });

@@ -8,6 +8,7 @@ import { JustAnotherHand_400Regular } from '@expo-google-fonts/just-another-hand
 import { useEffect } from 'react';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { configureForegroundNotificationsOnce } from '@/lib/pushNotifications';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -24,6 +25,10 @@ export default function RootLayout() {
     void SplashScreen.preventAutoHideAsync().catch(() => {
       // ignore
     });
+  }, []);
+
+  useEffect(() => {
+    configureForegroundNotificationsOnce();
   }, []);
 
   useEffect(() => {

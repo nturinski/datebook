@@ -5,5 +5,9 @@
     "azureFunctions.projectRuntime": "~4",
     "debug.internalConsoleOptions": "neverOpen",
     "azureFunctions.preDeployTask": "npm prune (functions)",
-    "azureFunctions.projectLanguageModel": 4
+    "azureFunctions.projectLanguageModel": 4,
+    "chat.tools.terminal.autoApprove": {
+        "npx expo": true,
+        "Set-Location": true
+    }
 }

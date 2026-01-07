@@ -57,6 +57,17 @@ export async function apiFetch<T>(
     if (data && typeof data.inviteRelationshipId === "string") extras.push(`inviteRelationshipId=${data.inviteRelationshipId}`);
     if (data && typeof data.currentMemberCount === "number") extras.push(`currentMemberCount=${data.currentMemberCount}`);
 
+    // If the backend returned structured validation data (Zod flatten, etc), surface it.
+    if (data && typeof data.details !== "undefined") {
+      try {
+        const raw = JSON.stringify(data.details);
+        const trimmed = raw.length > 800 ? `${raw.slice(0, 800)}…` : raw;
+        extras.push(`details=${trimmed}`);
+      } catch {
+        // ignore
+      }
+    }
+
     const msg = extras.length ? `${baseMsg} (${extras.join(", ")})` : baseMsg;
     throw new Error(msg);
   }

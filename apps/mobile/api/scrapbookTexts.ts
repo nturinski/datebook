@@ -4,6 +4,7 @@ export type ScrapbookTextFont = 'hand' | 'script' | 'marker' | 'print' | 'justAn
 
 export type ScrapbookPageText = {
   id: string;
+  createdByUserId: string;
   text: string;
   font: ScrapbookTextFont;
   color: string;

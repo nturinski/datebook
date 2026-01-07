@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 
 import type { ScrapbookPageSticker, ScrapbookStickerKind } from '@/api/scrapbookStickers';
+import { AttributionBadge } from '@/components/scrapbook/AttributionBadge';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -93,13 +94,24 @@ function DraggableSticker(props: {
   stageHeight: number;
   isActive: boolean;
   zIndex: number;
+  badgeText?: string;
   onActivate: (stickerId: string) => void;
   onPress: (stickerId: string) => void;
   onTransformChanged: (args: { stickerId: string; x: number; y: number }) => void;
   onTransformCommitted: (args: { stickerId: string; x: number; y: number }) => Promise<void>;
 }) {
-  const { sticker, stageWidth, stageHeight, isActive, zIndex, onActivate, onPress, onTransformChanged, onTransformCommitted } =
-    props;
+  const {
+    sticker,
+    stageWidth,
+    stageHeight,
+    isActive,
+    zIndex,
+    badgeText,
+    onActivate,
+    onPress,
+    onTransformChanged,
+    onTransformCommitted,
+  } = props;
 
   const pan = useRef(new Animated.ValueXY()).current;
   const start = useRef({ x: 0, y: 0 });
@@ -285,6 +297,10 @@ function DraggableSticker(props: {
           {emoji}
         </Text>
       </View>
+
+      {badgeText && isActive ? (
+        <AttributionBadge text={badgeText} size={18} counterRotationDeg={-rotation} style={styles.attributionBadge} />
+      ) : null}
     </Animated.View>
   );
 }
@@ -296,6 +312,7 @@ export function StickersLayer(props: {
   style?: StyleProp<ViewStyle>;
   activeStickerId?: string | null;
   onActiveStickerIdChange?: (stickerId: string | null) => void;
+  getContributorInitials?: (userId: string) => string;
   onStickerPressed: (stickerId: string) => void;
   onTransformChanged: (args: { stickerId: string; x: number; y: number }) => void;
   onTransformCommitted: (args: { stickerId: string; x: number; y: number }) => Promise<void>;
@@ -307,6 +324,7 @@ export function StickersLayer(props: {
     style,
     activeStickerId: controlledActiveStickerId,
     onActiveStickerIdChange,
+    getContributorInitials,
     onStickerPressed,
     onTransformChanged,
     onTransformCommitted,
@@ -328,6 +346,7 @@ export function StickersLayer(props: {
       {stickers.map((s) => {
         const isActive = s.id === activeStickerId;
         const zIndex = isActive ? STICKERS_Z_BASE + 100 : STICKERS_Z_BASE;
+        const badgeText = typeof getContributorInitials === 'function' ? getContributorInitials(s.createdByUserId) : undefined;
         return (
           <DraggableSticker
             key={s.id}
@@ -336,6 +355,7 @@ export function StickersLayer(props: {
             stageHeight={stageHeight}
             isActive={isActive}
             zIndex={zIndex}
+            badgeText={badgeText}
             onActivate={(id) => setActiveStickerId(id)}
             onPress={onStickerPressed}
             onTransformChanged={onTransformChanged}
@@ -383,5 +403,10 @@ const styles = StyleSheet.create({
   },
   stickerText: {
     fontWeight: '900',
+  },
+  attributionBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
   },
 });
