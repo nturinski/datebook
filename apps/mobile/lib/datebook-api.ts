@@ -38,6 +38,17 @@ function withoutTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
 }
 
+function normalizeEnvBaseUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  // Special value to force dynamic discovery (useful in dev when DHCP changes).
+  if (trimmed.toLowerCase() === 'auto') return null;
+
+  return trimmed;
+}
+
 function guessDevHostIp(): string | null {
   // Expo dev host fields commonly look like:
   // - hostUri: "192.168.1.50:8081" (or sometimes "localhost:8081")
@@ -69,7 +80,26 @@ function guessDevHostIp(): string | null {
  * Expected final shape: http(s)://HOST:7071/api
  */
 export function getApiBaseUrl(): string {
-  const fromEnv = process.env.EXPO_PUBLIC_API_BASE_URL;
+  const fromEnvWeb = normalizeEnvBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL_WEB);
+  const fromEnvAndroid = normalizeEnvBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL_ANDROID);
+  const fromEnvIos = normalizeEnvBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL_IOS);
+  const fromEnv = normalizeEnvBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL);
+
+  if (Platform.OS === 'web' && typeof fromEnvWeb === 'string' && fromEnvWeb.length > 0) {
+    const normalized = withoutTrailingSlash(fromEnvWeb);
+    return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
+  }
+
+  if (Platform.OS === 'android' && typeof fromEnvAndroid === 'string' && fromEnvAndroid.length > 0) {
+    const normalized = withoutTrailingSlash(fromEnvAndroid);
+    return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
+  }
+
+  if (Platform.OS === 'ios' && typeof fromEnvIos === 'string' && fromEnvIos.length > 0) {
+    const normalized = withoutTrailingSlash(fromEnvIos);
+    return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
+  }
+
   if (typeof fromEnv === 'string' && fromEnv.length > 0) {
     const normalized = withoutTrailingSlash(fromEnv);
 
@@ -78,6 +108,24 @@ export function getApiBaseUrl(): string {
     //   http://host:7071/api
     // but always return a base that includes the route prefix.
     return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
+  }
+
+  // Web dev: prefer the current page hostname.
+  // This avoids relying on Expo Constants fields that can be stale/incorrect on web
+  // (e.g. pointing at an IP not assigned to this machine).
+  if (__DEV__ && Platform.OS === 'web') {
+    const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+    const protocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
+
+    // Most dev setups are http. If you're running the web app over https,
+    // you'll need to run Functions with https too (otherwise the browser blocks mixed content).
+    const proto = protocol === 'https:' ? 'https' : 'http';
+
+    if (hostname) {
+      return `${proto}://${hostname}:7071/api`;
+    }
+
+    return 'http://localhost:7071/api';
   }
 
   const devHostIp = guessDevHostIp();

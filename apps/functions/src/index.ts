@@ -12,8 +12,8 @@ import './functions/media';
 import './functions/relationships';
 import './functions/scrapbooks';
 import './functions/scrapbookPages';
-import './functions/scrapbookPageNotes';
 import './functions/scrapbookPageStickers';
+import './functions/scrapbookPageTexts';
 import './functions/users';
 import './functions/users-list';
 

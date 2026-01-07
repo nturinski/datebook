@@ -8,6 +8,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -25,14 +26,6 @@ import {
 } from '@/api/scrapbookPages';
 import { requestMediaUploadUrl } from '@/api/media';
 import {
-  createScrapbookPageNote,
-  deleteScrapbookPageNote,
-  listScrapbookPageNotes,
-  patchScrapbookPageNote,
-  type ScrapbookNoteColor,
-  type ScrapbookPageNote,
-} from '@/api/scrapbookNotes';
-import {
   createScrapbookPageSticker,
   deleteScrapbookPageSticker,
   listScrapbookPageStickers,
@@ -40,10 +33,19 @@ import {
   type ScrapbookPageSticker,
   type ScrapbookStickerKind,
 } from '@/api/scrapbookStickers';
+import {
+  createScrapbookPageText,
+  deleteScrapbookPageText,
+  listScrapbookPageTexts,
+  patchScrapbookPageText,
+  type ScrapbookPageText,
+  type ScrapbookTextFont,
+} from '@/api/scrapbookTexts';
 import { MemoriesCanvas, type MemoryPhoto } from '@/components/memories/MemoriesCanvas';
-import { StickersLayer, STICKER_BASE_SIZE, stickerEmoji } from '@/components/scrapbook/StickersLayer';
-import { STICKY_NOTE_SIZE, StickyNotesLayer } from '@/components/scrapbook/StickyNotesLayer';
+import { getStickerBaseSizePx, StickersLayer, stickerEmoji } from '@/components/scrapbook/StickersLayer';
+import { getTextBaseSizePx, TextLayer } from '@/components/scrapbook/TextLayer';
 import { PaperColors } from '@/constants/paper';
+import { containA4Rect } from '@/lib/layout/a4';
 import {
   ensurePlacesSessionToken,
   googlePlaceDetails,
@@ -89,6 +91,23 @@ const MOOD_TAG_OPTIONS: readonly string[] = [
   'spicy',
 ];
 
+const TEXT_FONT_OPTIONS: readonly { font: ScrapbookTextFont; label: string }[] = [
+  { font: 'hand', label: 'Hand' },
+  { font: 'justAnotherHand', label: 'Just Another Hand' },
+  { font: 'script', label: 'Script' },
+  { font: 'marker', label: 'Marker' },
+  { font: 'print', label: 'Print' },
+];
+
+const TEXT_COLOR_OPTIONS: readonly { color: string; label: string }[] = [
+  { color: '#2E2A27', label: 'Ink' },
+  { color: '#B23A48', label: 'Red' },
+  { color: '#2A6F97', label: 'Blue' },
+  { color: '#2D6A4F', label: 'Green' },
+  { color: '#6D597A', label: 'Purple' },
+  { color: '#000000', label: 'Black' },
+];
+
 export default function ScrapbookViewer() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const scrapbookId = useMemo(() => {
@@ -110,23 +129,24 @@ export default function ScrapbookViewer() {
   const [creatingPage, setCreatingPage] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-  const [notesByPageId, setNotesByPageId] = useState<Record<string, ScrapbookPageNote[]>>({});
-  const [notesLoadingPageIds, setNotesLoadingPageIds] = useState<Record<string, boolean>>({});
   const [stickersByPageId, setStickersByPageId] = useState<Record<string, ScrapbookPageSticker[]>>({});
   const [stickersLoadingPageIds, setStickersLoadingPageIds] = useState<Record<string, boolean>>({});
-  const [editingNote, setEditingNote] = useState<{
-    pageId: string;
-    noteId: string;
-    text: string;
-  } | null>(null);
-  const [editingText, setEditingText] = useState<string>('');
-  const [noteActionsFor, setNoteActionsFor] = useState<{ pageId: string; noteId: string } | null>(null);
-  const [confirmDeleteFor, setConfirmDeleteFor] = useState<{ pageId: string; noteId: string } | null>(null);
+
+  const [textsByPageId, setTextsByPageId] = useState<Record<string, ScrapbookPageText[]>>({});
+  const [textsLoadingPageIds, setTextsLoadingPageIds] = useState<Record<string, boolean>>({});
 
   const [stickerTrayOpen, setStickerTrayOpen] = useState(false);
   const [stickerActionsFor, setStickerActionsFor] = useState<{ pageId: string; stickerId: string } | null>(null);
   const [confirmStickerDeleteFor, setConfirmStickerDeleteFor] = useState<{ pageId: string; stickerId: string } | null>(null);
   const [activeStickerFor, setActiveStickerFor] = useState<{ pageId: string; stickerId: string } | null>(null);
+  const [stickerActionsPopoverHeight, setStickerActionsPopoverHeight] = useState<number>(260);
+
+  const [textActionsFor, setTextActionsFor] = useState<{ pageId: string; textId: string } | null>(null);
+  const [confirmTextDeleteFor, setConfirmTextDeleteFor] = useState<{ pageId: string; textId: string } | null>(null);
+  const [activeTextFor, setActiveTextFor] = useState<{ pageId: string; textId: string } | null>(null);
+  const [textEditorFor, setTextEditorFor] = useState<{ pageId: string; textId: string } | null>(null);
+  const [textDraft, setTextDraft] = useState<{ text: string; font: ScrapbookTextFont; color: string } | null>(null);
+  const [textDraftOriginal, setTextDraftOriginal] = useState<{ pageId: string; textId: string; text: string; font: ScrapbookTextFont; color: string } | null>(null);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsSaving, setDetailsSaving] = useState(false);
@@ -137,6 +157,8 @@ export default function ScrapbookViewer() {
     moodTags: string[];
     review: string;
   } | null>(null);
+
+  const [canvasFrameSize, setCanvasFrameSize] = useState<{ width: number; height: number } | null>(null);
 
   const [placeSessionToken, setPlaceSessionToken] = useState<string | null>(null);
   const [placeSuggestions, setPlaceSuggestions] = useState<GooglePlacesAutocompletePrediction[]>([]);
@@ -155,10 +177,10 @@ export default function ScrapbookViewer() {
       setRelationshipId(sb.relationshipId);
       setScrapbookDetails(sb.details ?? null);
       setPages(ps);
-      setNotesByPageId({});
-      setNotesLoadingPageIds({});
       setStickersByPageId({});
       setStickersLoadingPageIds({});
+      setTextsByPageId({});
+      setTextsLoadingPageIds({});
       setPageCursor((cur) => {
         if (ps.length === 0) return 0;
         return Math.max(0, Math.min(cur, ps.length - 1));
@@ -207,23 +229,6 @@ export default function ScrapbookViewer() {
 
   const currentPage = pages.length > 0 ? pages[Math.max(0, Math.min(pageCursor, pages.length - 1))] : null;
 
-  const loadNotesForPage = useCallback(
-    async (pageId: string) => {
-      if (!scrapbookId) return;
-      setNotesLoadingPageIds((prev) => ({ ...prev, [pageId]: true }));
-      try {
-        const notes = await listScrapbookPageNotes({ scrapbookId, pageId });
-        setNotesByPageId((prev) => ({ ...prev, [pageId]: notes }));
-      } catch (e: unknown) {
-        // Non-fatal: allow the page to render without notes.
-        setStatus((prev) => prev ?? (e instanceof Error ? e.message : String(e)));
-      } finally {
-        setNotesLoadingPageIds((prev) => ({ ...prev, [pageId]: false }));
-      }
-    },
-    [scrapbookId]
-  );
-
   const loadStickersForPage = useCallback(
     async (pageId: string) => {
       if (!scrapbookId) return;
@@ -241,12 +246,22 @@ export default function ScrapbookViewer() {
     [scrapbookId]
   );
 
-  useEffect(() => {
-    if (!currentPage || !scrapbookId) return;
-    if (notesByPageId[currentPage.id]) return;
-    if (notesLoadingPageIds[currentPage.id]) return;
-    void loadNotesForPage(currentPage.id);
-  }, [currentPage, loadNotesForPage, notesByPageId, notesLoadingPageIds, scrapbookId]);
+  const loadTextsForPage = useCallback(
+    async (pageId: string) => {
+      if (!scrapbookId) return;
+      setTextsLoadingPageIds((prev) => ({ ...prev, [pageId]: true }));
+      try {
+        const texts = await listScrapbookPageTexts({ scrapbookId, pageId });
+        setTextsByPageId((prev) => ({ ...prev, [pageId]: texts }));
+      } catch (e: unknown) {
+        // Non-fatal: allow the page to render without texts.
+        setStatus((prev) => prev ?? (e instanceof Error ? e.message : String(e)));
+      } finally {
+        setTextsLoadingPageIds((prev) => ({ ...prev, [pageId]: false }));
+      }
+    },
+    [scrapbookId]
+  );
 
   useEffect(() => {
     if (!currentPage || !scrapbookId) return;
@@ -255,6 +270,13 @@ export default function ScrapbookViewer() {
     void loadStickersForPage(currentPage.id);
   }, [currentPage, loadStickersForPage, scrapbookId, stickersByPageId, stickersLoadingPageIds]);
 
+  useEffect(() => {
+    if (!currentPage || !scrapbookId) return;
+    if (textsByPageId[currentPage.id]) return;
+    if (textsLoadingPageIds[currentPage.id]) return;
+    void loadTextsForPage(currentPage.id);
+  }, [currentPage, loadTextsForPage, scrapbookId, textsByPageId, textsLoadingPageIds]);
+
   const updateCursorFromOffsetX = useCallback(
     (offsetX: number) => {
       if (!Number.isFinite(offsetX)) return;
@@ -262,11 +284,14 @@ export default function ScrapbookViewer() {
       const raw = Math.round(offsetX / windowWidth);
       const idx = Math.max(0, Math.min(raw, Math.max(0, pages.length - 1)));
       setPageCursor((cur) => (cur === idx ? cur : idx));
-      setNoteActionsFor(null);
-      setConfirmDeleteFor(null);
       setStickerActionsFor(null);
       setConfirmStickerDeleteFor(null);
       setActiveStickerFor(null);
+      setTextActionsFor(null);
+      setConfirmTextDeleteFor(null);
+      setActiveTextFor(null);
+      setTextEditorFor(null);
+      setTextDraft(null);
       setDetailsOpen(false);
       setDetailsDraft(null);
     },
@@ -317,18 +342,6 @@ export default function ScrapbookViewer() {
     );
   }, []);
 
-  const onNoteTransformChanged = useCallback((args: { pageId: string; noteId: string; x: number; y: number }) => {
-    setNotesByPageId((prev) => {
-      const pageNotes = prev[args.pageId];
-      if (!pageNotes) return prev;
-      const idx = pageNotes.findIndex((n) => n.id === args.noteId);
-      if (idx < 0) return prev;
-      const next = [...pageNotes];
-      next[idx] = { ...next[idx], x: args.x, y: args.y };
-      return { ...prev, [args.pageId]: next };
-    });
-  }, []);
-
   const onStickerTransformChanged = useCallback(
     (args: { pageId: string; stickerId: string; x: number; y: number }) => {
       setStickersByPageId((prev) => {
@@ -342,29 +355,6 @@ export default function ScrapbookViewer() {
       });
     },
     []
-  );
-
-  const onNoteTransformCommitted = useCallback(
-    async (args: { pageId: string; noteId: string; x: number; y: number }) => {
-      if (!scrapbookId) return;
-      try {
-        const updated = await patchScrapbookPageNote({
-          scrapbookId,
-          pageId: args.pageId,
-          noteId: args.noteId,
-          x: args.x,
-          y: args.y,
-        });
-        setNotesByPageId((prev) => {
-          const pageNotes = prev[args.pageId];
-          if (!pageNotes) return prev;
-          return { ...prev, [args.pageId]: pageNotes.map((n) => (n.id === updated.id ? updated : n)) };
-        });
-      } catch (e: unknown) {
-        setStatus(e instanceof Error ? e.message : String(e));
-      }
-    },
-    [scrapbookId]
   );
 
   const onStickerTransformCommitted = useCallback(
@@ -390,27 +380,45 @@ export default function ScrapbookViewer() {
     [scrapbookId]
   );
 
-  const openNoteEditor = useCallback((args: { pageId: string; noteId: string; text: string }) => {
-    setEditingNote(args);
-    setEditingText(args.text);
-  }, []);
-
-  const saveNoteText = useCallback(async () => {
-    if (!editingNote || !scrapbookId) return;
-    const { pageId, noteId } = editingNote;
-    const text = editingText;
-    try {
-      const updated = await patchScrapbookPageNote({ scrapbookId, pageId, noteId, text });
-      setNotesByPageId((prev) => {
-        const pageNotes = prev[pageId];
-        if (!pageNotes) return prev;
-        return { ...prev, [pageId]: pageNotes.map((n) => (n.id === noteId ? updated : n)) };
+  const onTextTransformChanged = useCallback(
+    (args: { pageId: string; textId: string; x: number; y: number; scale: number }) => {
+      setTextsByPageId((prev) => {
+        const pageTexts = prev[args.pageId];
+        if (!pageTexts) return prev;
+        const idx = pageTexts.findIndex((t) => t.id === args.textId);
+        if (idx < 0) return prev;
+        const next = [...pageTexts];
+        next[idx] = { ...next[idx], x: args.x, y: args.y, scale: args.scale };
+        return { ...prev, [args.pageId]: next };
       });
-      setEditingNote(null);
-    } catch (e: unknown) {
-      setStatus(e instanceof Error ? e.message : String(e));
-    }
-  }, [editingNote, editingText, scrapbookId]);
+    },
+    []
+  );
+
+  const onTextTransformCommitted = useCallback(
+    async (args: { pageId: string; textId: string; x: number; y: number; scale: number }) => {
+      if (!scrapbookId) return;
+      try {
+        const updated = await patchScrapbookPageText({
+          scrapbookId,
+          pageId: args.pageId,
+          textId: args.textId,
+          x: args.x,
+          y: args.y,
+          scale: args.scale,
+        });
+
+        setTextsByPageId((prev) => {
+          const pageTexts = prev[args.pageId];
+          if (!pageTexts) return prev;
+          return { ...prev, [args.pageId]: pageTexts.map((t) => (t.id === updated.id ? updated : t)) };
+        });
+      } catch (e: unknown) {
+        setStatus(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [scrapbookId]
+  );
 
   const openDetailsForCurrentPage = useCallback(() => {
     const details = scrapbookDetails;
@@ -431,10 +439,26 @@ export default function ScrapbookViewer() {
     // Close any other menus/modals.
     setStickerActionsFor(null);
     setConfirmStickerDeleteFor(null);
-    setNoteActionsFor(null);
-    setConfirmDeleteFor(null);
     setActiveStickerFor(null);
+    setTextActionsFor(null);
+    setConfirmTextDeleteFor(null);
+    setActiveTextFor(null);
+    setTextEditorFor(null);
+    setTextDraft(null);
+    setTextDraftOriginal(null);
   }, [scrapbookDetails]);
+
+  const applyTextDraftPreview = useCallback((args: { pageId: string; textId: string; patch: Partial<Pick<ScrapbookPageText, 'text' | 'font' | 'color'>> }) => {
+    setTextsByPageId((prev) => {
+      const pageTexts = prev[args.pageId];
+      if (!pageTexts) return prev;
+      const idx = pageTexts.findIndex((t) => t.id === args.textId);
+      if (idx < 0) return prev;
+      const next = [...pageTexts];
+      next[idx] = { ...next[idx], ...args.patch };
+      return { ...prev, [args.pageId]: next };
+    });
+  }, []);
 
   // Autocomplete place suggestions as the user types.
   useEffect(() => {
@@ -581,79 +605,6 @@ export default function ScrapbookViewer() {
     }
   }, [detailsDraft, detailsSaving, scrapbookDetails, scrapbookId]);
 
-  const setNoteColor = useCallback(
-    (args: { pageId: string; noteId: string; color: ScrapbookNoteColor }) => {
-      if (!scrapbookId) return;
-
-      // Optimistic UI update: change color immediately.
-      const prevColor = (notesByPageId[args.pageId] ?? []).find((n) => n.id === args.noteId)?.color;
-      setNotesByPageId((prev) => {
-        const pageNotes = prev[args.pageId];
-        if (!pageNotes) return prev;
-        return {
-          ...prev,
-          [args.pageId]: pageNotes.map((n) => (n.id === args.noteId ? { ...n, color: args.color } : n)),
-        };
-      });
-
-      // Then sync to backend.
-      void (async () => {
-        try {
-          const updated = await patchScrapbookPageNote({
-            scrapbookId,
-            pageId: args.pageId,
-            noteId: args.noteId,
-            color: args.color,
-          });
-          setNotesByPageId((prev) => {
-            const pageNotes = prev[args.pageId];
-            if (!pageNotes) return prev;
-            return { ...prev, [args.pageId]: pageNotes.map((n) => (n.id === args.noteId ? updated : n)) };
-          });
-        } catch (e: unknown) {
-          // Roll back optimistic update on failure.
-          if (prevColor) {
-            setNotesByPageId((prev) => {
-              const pageNotes = prev[args.pageId];
-              if (!pageNotes) return prev;
-              return {
-                ...prev,
-                [args.pageId]: pageNotes.map((n) => (n.id === args.noteId ? { ...n, color: prevColor } : n)),
-              };
-            });
-          }
-          setStatus(e instanceof Error ? e.message : String(e));
-        }
-      })();
-    },
-    [notesByPageId, scrapbookId]
-  );
-
-  const deleteNote = useCallback(
-    async (args: { pageId: string; noteId: string }) => {
-      if (!scrapbookId) return;
-
-      // Optimistic UI update so the user immediately sees something happen.
-      const previous = notesByPageId[args.pageId] ?? null;
-      setNotesByPageId((prev) => {
-        const pageNotes = prev[args.pageId];
-        if (!pageNotes) return prev;
-        return { ...prev, [args.pageId]: pageNotes.filter((n) => n.id !== args.noteId) };
-      });
-
-      try {
-        await deleteScrapbookPageNote({ scrapbookId, pageId: args.pageId, noteId: args.noteId });
-      } catch (e: unknown) {
-        // Roll back optimistic delete.
-        if (previous) {
-          setNotesByPageId((prev) => ({ ...prev, [args.pageId]: previous }));
-        }
-        setStatus(e instanceof Error ? e.message : String(e));
-      }
-    },
-    [notesByPageId, scrapbookId]
-  );
-
   const patchStickerOptimistic = useCallback(
     (args: {
       pageId: string;
@@ -706,6 +657,250 @@ export default function ScrapbookViewer() {
     [scrapbookId, stickersByPageId]
   );
 
+  const patchTextOptimistic = useCallback(
+    (args: {
+      pageId: string;
+      textId: string;
+      patch: Partial<Pick<ScrapbookPageText, 'text' | 'font' | 'color' | 'x' | 'y' | 'scale' | 'rotation'>>;
+    }) => {
+      if (!scrapbookId) return;
+
+      const previous = (textsByPageId[args.pageId] ?? []).find((t) => t.id === args.textId) ?? null;
+      setTextsByPageId((prev) => {
+        const pageTexts = prev[args.pageId];
+        if (!pageTexts) return prev;
+        return {
+          ...prev,
+          [args.pageId]: pageTexts.map((t) => (t.id === args.textId ? { ...t, ...args.patch } : t)),
+        };
+      });
+
+      void (async () => {
+        try {
+          const updated = await patchScrapbookPageText({
+            scrapbookId,
+            pageId: args.pageId,
+            textId: args.textId,
+            ...(typeof args.patch.text === 'string' ? { text: args.patch.text } : {}),
+            ...(typeof args.patch.font === 'string' ? { font: args.patch.font } : {}),
+            ...(typeof args.patch.color === 'string' ? { color: args.patch.color } : {}),
+            ...(typeof args.patch.x === 'number' ? { x: args.patch.x } : {}),
+            ...(typeof args.patch.y === 'number' ? { y: args.patch.y } : {}),
+            ...(typeof args.patch.scale === 'number' ? { scale: args.patch.scale } : {}),
+            ...(typeof args.patch.rotation === 'number' ? { rotation: args.patch.rotation } : {}),
+          });
+
+          setTextsByPageId((prev) => {
+            const pageTexts = prev[args.pageId];
+            if (!pageTexts) return prev;
+            return { ...prev, [args.pageId]: pageTexts.map((t) => (t.id === updated.id ? updated : t)) };
+          });
+        } catch (e: unknown) {
+          if (previous) {
+            setTextsByPageId((prev) => {
+              const pageTexts = prev[args.pageId];
+              if (!pageTexts) return prev;
+              return { ...prev, [args.pageId]: pageTexts.map((t) => (t.id === args.textId ? previous : t)) };
+            });
+          }
+          setStatus(e instanceof Error ? e.message : String(e));
+        }
+      })();
+    },
+    [scrapbookId, textsByPageId]
+  );
+
+  const deleteText = useCallback(
+    async (args: { pageId: string; textId: string }) => {
+      if (!scrapbookId) return;
+
+      const previous = textsByPageId[args.pageId] ?? null;
+      setTextsByPageId((prev) => {
+        const pageTexts = prev[args.pageId];
+        if (!pageTexts) return prev;
+        return { ...prev, [args.pageId]: pageTexts.filter((t) => t.id !== args.textId) };
+      });
+
+      try {
+        await deleteScrapbookPageText({ scrapbookId, pageId: args.pageId, textId: args.textId });
+      } catch (e: unknown) {
+        if (previous) setTextsByPageId((prev) => ({ ...prev, [args.pageId]: previous }));
+        setStatus(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [scrapbookId, textsByPageId]
+  );
+
+  const onTextPressed = useCallback((args: { pageId: string; textId: string }) => {
+    setTextActionsFor(args);
+    setConfirmTextDeleteFor(null);
+  }, []);
+
+  const renderTextActionsPopover = useCallback(
+    (args: { pageId: string; stageWidth: number; stageHeight: number }) => {
+      const target = textActionsFor;
+      if (!target) return null;
+      if (target.pageId !== args.pageId) return null;
+
+      const confirmingDelete =
+        !!confirmTextDeleteFor &&
+        confirmTextDeleteFor.pageId === target.pageId &&
+        confirmTextDeleteFor.textId === target.textId;
+
+      const textItem = (textsByPageId[target.pageId] ?? []).find((t) => t.id === target.textId);
+      if (!textItem) return null;
+
+      const scale = typeof textItem.scale === 'number' ? textItem.scale : 1;
+      const base = getTextBaseSizePx(args.stageWidth);
+      const sizeW = base.width * Math.min(Math.max(scale, 0.25), 6);
+      const sizeH = base.height * Math.min(Math.max(scale, 0.25), 6);
+
+      const maxX = Math.max(0, args.stageWidth - sizeW);
+      const maxY = Math.max(0, args.stageHeight - sizeH);
+      const leftPx = (typeof textItem.x === 'number' ? textItem.x : 0) * maxX;
+      const topPx = (typeof textItem.y === 'number' ? textItem.y : 0) * maxY;
+
+      const MENU_W = 260;
+      const MENU_H = confirmingDelete ? 260 : 240;
+      const desiredLeft = leftPx + sizeW - MENU_W;
+      const desiredTop = topPx - MENU_H - 8;
+      const left = Math.max(8, Math.min(desiredLeft, Math.max(8, args.stageWidth - MENU_W - 8)));
+      const top = Math.max(8, Math.min(desiredTop, Math.max(8, args.stageHeight - MENU_H - 8)));
+
+      return (
+        <View style={[StyleSheet.absoluteFill, styles.popoverLayer]} pointerEvents="box-none">
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              setTextActionsFor(null);
+              setConfirmTextDeleteFor(null);
+            }}
+          />
+
+          <View
+            style={[
+              styles.popover,
+              {
+                left,
+                top,
+                width: MENU_W,
+                maxHeight: Math.max(120, args.stageHeight - 16),
+              },
+            ]}
+          >
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.popoverScrollContent}>
+              <Text style={styles.actionSectionLabel}>Text</Text>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setTextActionsFor(null);
+                  setConfirmTextDeleteFor(null);
+                  const draft = {
+                    text: typeof textItem.text === 'string' ? textItem.text : '',
+                    font: (typeof textItem.font === 'string' ? (textItem.font as ScrapbookTextFont) : 'hand') as ScrapbookTextFont,
+                    color: typeof textItem.color === 'string' ? textItem.color : '#2E2A27',
+                  };
+                  setTextEditorFor({ pageId: target.pageId, textId: target.textId });
+                  setTextDraft(draft);
+                  setTextDraftOriginal({ pageId: target.pageId, textId: target.textId, ...draft });
+                }}
+                style={({ pressed }) => [styles.popoverRow, pressed && styles.actionRowPressed]}
+              >
+                <Text style={styles.popoverRowText}>Edit</Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  const cur = typeof textItem.rotation === 'number' ? textItem.rotation : 0;
+                  patchTextOptimistic({ pageId: target.pageId, textId: target.textId, patch: { rotation: cur + 15 } });
+                }}
+                style={({ pressed }) => [styles.popoverRow, pressed && styles.actionRowPressed]}
+              >
+                <Text style={styles.popoverRowText}>Rotate +15°</Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  const cur = typeof textItem.rotation === 'number' ? textItem.rotation : 0;
+                  patchTextOptimistic({ pageId: target.pageId, textId: target.textId, patch: { rotation: cur - 15 } });
+                }}
+                style={({ pressed }) => [styles.popoverRow, pressed && styles.actionRowPressed]}
+              >
+                <Text style={styles.popoverRowText}>Rotate -15°</Text>
+              </Pressable>
+
+              <View style={styles.colorRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    const cur = typeof textItem.scale === 'number' ? textItem.scale : 1;
+                    const next = Math.min(6, cur * 1.15);
+                    patchTextOptimistic({ pageId: target.pageId, textId: target.textId, patch: { scale: next } });
+                  }}
+                  style={({ pressed }) => [styles.colorChip, pressed && styles.actionRowPressed]}
+                >
+                  <Text style={styles.colorChipText}>Bigger</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    const cur = typeof textItem.scale === 'number' ? textItem.scale : 1;
+                    const next = Math.max(0.25, cur / 1.15);
+                    patchTextOptimistic({ pageId: target.pageId, textId: target.textId, patch: { scale: next } });
+                  }}
+                  style={({ pressed }) => [styles.colorChip, pressed && styles.actionRowPressed]}
+                >
+                  <Text style={styles.colorChipText}>Smaller</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.actionDivider} />
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  if (confirmingDelete) {
+                    void deleteText(target);
+                    setTextActionsFor(null);
+                    setConfirmTextDeleteFor(null);
+                    setActiveTextFor(null);
+                    return;
+                  }
+                  setConfirmTextDeleteFor(target);
+                }}
+                style={({ pressed }) => [styles.popoverRow, pressed && styles.actionRowPressed]}
+              >
+                <Text style={[styles.popoverRowText, styles.destructiveText]}>
+                  {confirmingDelete ? 'Tap again to confirm delete' : 'Delete'}
+                </Text>
+              </Pressable>
+
+              {confirmingDelete ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setConfirmTextDeleteFor(null)}
+                  style={({ pressed }) => [styles.popoverRow, pressed && styles.actionRowPressed]}
+                >
+                  <Text style={styles.popoverRowText}>Cancel delete</Text>
+                </Pressable>
+              ) : null}
+            </ScrollView>
+          </View>
+        </View>
+      );
+    },
+    [
+      confirmTextDeleteFor,
+      deleteText,
+      patchTextOptimistic,
+      textActionsFor,
+      textsByPageId,
+    ]
+  );
+
   const deleteSticker = useCallback(
     async (args: { pageId: string; stickerId: string }) => {
       if (!scrapbookId) return;
@@ -729,134 +924,10 @@ export default function ScrapbookViewer() {
     [scrapbookId, stickersByPageId]
   );
 
-  const onNotePressed = useCallback(
-    (args: { pageId: string; noteId: string }) => {
-      setNoteActionsFor(args);
-      setConfirmDeleteFor(null);
-      setStickerActionsFor(null);
-      setConfirmStickerDeleteFor(null);
-    },
-    []
-  );
-
   const onStickerPressed = useCallback((args: { pageId: string; stickerId: string }) => {
     setStickerActionsFor(args);
     setConfirmStickerDeleteFor(null);
-    setNoteActionsFor(null);
-    setConfirmDeleteFor(null);
   }, []);
-
-  const renderNoteActionsPopover = useCallback(
-    (args: { pageId: string; stageWidth: number; stageHeight: number }) => {
-      const target = noteActionsFor;
-      if (!target) return null;
-      if (target.pageId !== args.pageId) return null;
-
-      const confirmingDelete =
-        !!confirmDeleteFor && confirmDeleteFor.pageId === target.pageId && confirmDeleteFor.noteId === target.noteId;
-
-      const note = (notesByPageId[target.pageId] ?? []).find((n) => n.id === target.noteId);
-      if (!note) return null;
-
-      // Compute pixel anchor from normalized x/y.
-      const maxX = Math.max(0, args.stageWidth - STICKY_NOTE_SIZE.width);
-      const maxY = Math.max(0, args.stageHeight - STICKY_NOTE_SIZE.height);
-      const noteLeft = (typeof note.x === 'number' ? note.x : 0) * maxX;
-      const noteTop = (typeof note.y === 'number' ? note.y : 0) * maxY;
-
-      // Place the menu just above the note, clamped within stage.
-      const MENU_W = 220;
-      const MENU_H = 210;
-      const desiredLeft = noteLeft + STICKY_NOTE_SIZE.width - MENU_W;
-      const desiredTop = noteTop - MENU_H - 8;
-      const left = Math.max(8, Math.min(desiredLeft, Math.max(8, args.stageWidth - MENU_W - 8)));
-      const top = Math.max(8, Math.min(desiredTop, Math.max(8, args.stageHeight - MENU_H - 8)));
-
-      return (
-        <View style={[StyleSheet.absoluteFill, styles.popoverLayer]} pointerEvents="box-none">
-          {/* Tap outside to close */}
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => {
-              setNoteActionsFor(null);
-              setConfirmDeleteFor(null);
-            }}
-          />
-
-          <View style={[styles.popover, { left, top, width: MENU_W }]}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setNoteActionsFor(null);
-                openNoteEditor({ pageId: target.pageId, noteId: target.noteId, text: note.text ?? '' });
-              }}
-              style={({ pressed }) => [styles.popoverRow, pressed && styles.actionRowPressed]}
-            >
-              <Text style={styles.popoverRowText}>Edit text</Text>
-            </Pressable>
-
-            <View style={styles.actionDivider} />
-
-            <Text style={styles.actionSectionLabel}>Change color</Text>
-            <View style={styles.colorRow}>
-              {([
-                { label: 'Yellow', color: 'yellow' },
-                { label: 'Pink', color: 'pink' },
-                { label: 'Blue', color: 'blue' },
-                { label: 'Purple', color: 'purple' },
-              ] as const).map((c) => (
-                <Pressable
-                  key={c.color}
-                  accessibilityRole="button"
-                  onPress={() => {
-                    void setNoteColor({ pageId: target.pageId, noteId: target.noteId, color: c.color });
-                    setNoteActionsFor(null);
-                  }}
-                  style={({ pressed }) => [styles.colorChip, pressed && styles.actionRowPressed]}
-                >
-                  <Text style={styles.colorChipText}>{c.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <View style={styles.actionDivider} />
-
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                if (confirmingDelete) {
-                  // Second tap (while confirming) performs the delete.
-                  void deleteNote(target);
-                  setNoteActionsFor(null);
-                  setConfirmDeleteFor(null);
-                  return;
-                }
-
-                // First tap toggles a confirmation state inside the popover.
-                setConfirmDeleteFor(target);
-              }}
-              style={({ pressed }) => [styles.popoverRow, pressed && styles.actionRowPressed]}
-            >
-              <Text style={[styles.popoverRowText, styles.destructiveText]}>
-                {confirmingDelete ? 'Tap again to confirm delete' : 'Delete'}
-              </Text>
-            </Pressable>
-
-            {confirmingDelete ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setConfirmDeleteFor(null)}
-                style={({ pressed }) => [styles.popoverRow, pressed && styles.actionRowPressed]}
-              >
-                <Text style={styles.popoverRowText}>Cancel delete</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        </View>
-      );
-    },
-    [confirmDeleteFor, deleteNote, noteActionsFor, notesByPageId, openNoteEditor, setNoteColor]
-  );
 
   const renderStickerActionsPopover = useCallback(
     (args: { pageId: string; stageWidth: number; stageHeight: number }) => {
@@ -873,7 +944,8 @@ export default function ScrapbookViewer() {
       if (!sticker) return null;
 
       const scale = typeof sticker.scale === 'number' ? sticker.scale : 1;
-      const size = STICKER_BASE_SIZE * Math.min(Math.max(scale, 0.25), 4);
+      const base = getStickerBaseSizePx(args.stageWidth);
+      const size = base * Math.min(Math.max(scale, 0.25), 4);
 
       const maxX = Math.max(0, args.stageWidth - size);
       const maxY = Math.max(0, args.stageHeight - size);
@@ -899,10 +971,28 @@ export default function ScrapbookViewer() {
             }}
           />
 
-          <View style={[styles.popover, { left, top, width: MENU_W }]}>
-            <Text style={styles.actionSectionLabel}>Sticker {emoji}</Text>
+          <View
+            style={[
+              styles.popover,
+              {
+                left,
+                top,
+                width: MENU_W,
+                maxHeight: Math.max(120, args.stageHeight - 16),
+              },
+            ]}
+            onLayout={(e) => {
+              const h = e.nativeEvent.layout.height;
+              if (!Number.isFinite(h)) return;
+              if (Math.abs(h - stickerActionsPopoverHeight) > 1) {
+                setStickerActionsPopoverHeight(h);
+              }
+            }}
+          >
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.popoverScrollContent}>
+              <Text style={styles.actionSectionLabel}>Sticker {emoji}</Text>
 
-            <Pressable
+              <Pressable
               accessibilityRole="button"
               onPress={() => {
                 const cur = typeof sticker.rotation === 'number' ? sticker.rotation : 0;
@@ -958,45 +1048,30 @@ export default function ScrapbookViewer() {
               </Text>
             </Pressable>
 
-            {confirmingDelete ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setConfirmStickerDeleteFor(null)}
-                style={({ pressed }) => [styles.popoverRow, pressed && styles.actionRowPressed]}
-              >
-                <Text style={styles.popoverRowText}>Cancel delete</Text>
-              </Pressable>
-            ) : null}
+              {confirmingDelete ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setConfirmStickerDeleteFor(null)}
+                  style={({ pressed }) => [styles.popoverRow, pressed && styles.actionRowPressed]}
+                >
+                  <Text style={styles.popoverRowText}>Cancel delete</Text>
+                </Pressable>
+              ) : null}
+            </ScrollView>
           </View>
         </View>
       );
     },
-    [confirmStickerDeleteFor, deleteSticker, patchStickerOptimistic, stickerActionsFor, stickersByPageId]
+    [
+      confirmStickerDeleteFor,
+      deleteSticker,
+      patchStickerOptimistic,
+      stickerActionsFor,
+      stickerActionsPopoverHeight,
+      stickersByPageId,
+    ]
   );
 
-  const addPostItToCurrentPage = useCallback(async () => {
-    if (!scrapbookId || !currentPage) return;
-    setStatus(null);
-    try {
-      const note = await createScrapbookPageNote({
-        scrapbookId,
-        pageId: currentPage.id,
-        text: '',
-        color: 'yellow',
-        x: 0.2,
-        y: 0.2,
-      });
-
-      setNotesByPageId((prev) => {
-        const existing = prev[currentPage.id] ?? [];
-        return { ...prev, [currentPage.id]: [...existing, note] };
-      });
-
-      openNoteEditor({ pageId: currentPage.id, noteId: note.id, text: note.text ?? '' });
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [currentPage, openNoteEditor, scrapbookId]);
 
   const addStickerToCurrentPage = useCallback(
     async (kind: ScrapbookStickerKind) => {
@@ -1025,6 +1100,42 @@ export default function ScrapbookViewer() {
     },
     [currentPage, scrapbookId]
   );
+
+  const addTextToCurrentPage = useCallback(async () => {
+    if (!scrapbookId || !currentPage) return;
+    setStatus(null);
+    try {
+      const created = await createScrapbookPageText({
+        scrapbookId,
+        pageId: currentPage.id,
+        text: 'Text',
+        font: 'hand',
+        color: '#2E2A27',
+        x: 0.1,
+        y: 0.15,
+        scale: 1,
+        rotation: 0,
+      });
+
+      setTextsByPageId((prev) => {
+        const existing = prev[currentPage.id] ?? [];
+        return { ...prev, [currentPage.id]: [...existing, created] };
+      });
+
+      setActiveTextFor({ pageId: currentPage.id, textId: created.id });
+      setTextEditorFor({ pageId: currentPage.id, textId: created.id });
+      setTextDraft({ text: created.text ?? 'Text', font: created.font ?? 'hand', color: created.color ?? '#2E2A27' });
+      setTextDraftOriginal({
+        pageId: currentPage.id,
+        textId: created.id,
+        text: created.text ?? 'Text',
+        font: created.font ?? 'hand',
+        color: created.color ?? '#2E2A27',
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [currentPage, scrapbookId]);
 
   const onTransformCommitted = useCallback(
     async (args: { mediaId: string; x: number; y: number; scale: number }) => {
@@ -1237,60 +1348,87 @@ export default function ScrapbookViewer() {
             y: m.y,
             scale: m.scale,
           }));
-
-          const notes = notesByPageId[item.id] ?? [];
           const stickers = stickersByPageId[item.id] ?? [];
 
           return (
-            <View style={[styles.pageViewport, { width: windowWidth }]}>
+            <View style={[styles.pageViewport, { width: windowWidth, height: '100%' }]}>
               <View style={styles.paperPage}>
                 <Text style={styles.pageTitle}>Page {index + 1}</Text>
 
-                <MemoriesCanvas
-                  photos={photos}
-                  style={styles.canvas}
-                  onStagePress={() => {
-                    setActiveStickerFor(null);
-                    setStickerActionsFor(null);
-                    setConfirmStickerDeleteFor(null);
-                    setNoteActionsFor(null);
-                    setConfirmDeleteFor(null);
+                <View
+                  style={styles.canvasFrame}
+                  onLayout={(e) => {
+                    const { width, height } = e.nativeEvent.layout;
+                    if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+                    if (width <= 0 || height <= 0) return;
+                    setCanvasFrameSize({ width, height });
                   }}
-                  onTransformChanged={onTransformChanged}
-                  onTransformCommitted={onTransformCommitted}
-                  renderOverlay={(stage) => (
-                    <>
-                      <StickersLayer
-                        stickers={stickers}
-                        stageWidth={stage.width}
-                        stageHeight={stage.height}
-                        activeStickerId={activeStickerFor?.pageId === item.id ? activeStickerFor.stickerId : null}
-                        onActiveStickerIdChange={(stickerId) =>
-                          setActiveStickerFor(stickerId ? { pageId: item.id, stickerId } : null)
-                        }
-                        onStickerPressed={(stickerId) => onStickerPressed({ pageId: item.id, stickerId })}
-                        onTransformChanged={({ stickerId, x, y }) =>
-                          onStickerTransformChanged({ pageId: item.id, stickerId, x, y })
-                        }
-                        onTransformCommitted={({ stickerId, x, y }) =>
-                          onStickerTransformCommitted({ pageId: item.id, stickerId, x, y })
-                        }
+                >
+                  {(() => {
+                    const rect = canvasFrameSize
+                      ? containA4Rect({
+                          containerWidth: canvasFrameSize.width,
+                          containerHeight: canvasFrameSize.height,
+                        })
+                      : null;
+                    const a4Style = rect
+                      ? { width: rect.width, height: rect.height, alignSelf: 'center' as const }
+                      : { flex: 1 };
+
+                    return (
+                      <MemoriesCanvas
+                        photos={photos}
+                        style={a4Style}
+                        onStagePress={() => {
+                          setActiveStickerFor(null);
+                          setStickerActionsFor(null);
+                          setConfirmStickerDeleteFor(null);
+                          setActiveTextFor(null);
+                          setTextActionsFor(null);
+                          setConfirmTextDeleteFor(null);
+                        }}
+                        onTransformChanged={onTransformChanged}
+                        onTransformCommitted={onTransformCommitted}
+                        renderOverlay={(stage) => (
+                          <>
+                            <TextLayer
+                              texts={textsByPageId[item.id] ?? []}
+                              stageWidth={stage.width}
+                              stageHeight={stage.height}
+                              activeTextId={activeTextFor?.pageId === item.id ? activeTextFor.textId : null}
+                              onActiveTextIdChange={(textId) => setActiveTextFor(textId ? { pageId: item.id, textId } : null)}
+                              onTextPressed={(textId) => onTextPressed({ pageId: item.id, textId })}
+                              onTransformChanged={({ textId, x, y, scale }) =>
+                                onTextTransformChanged({ pageId: item.id, textId, x, y, scale })
+                              }
+                              onTransformCommitted={({ textId, x, y, scale }) =>
+                                onTextTransformCommitted({ pageId: item.id, textId, x, y, scale })
+                              }
+                            />
+                            <StickersLayer
+                              stickers={stickers}
+                              stageWidth={stage.width}
+                              stageHeight={stage.height}
+                              activeStickerId={activeStickerFor?.pageId === item.id ? activeStickerFor.stickerId : null}
+                              onActiveStickerIdChange={(stickerId) =>
+                                setActiveStickerFor(stickerId ? { pageId: item.id, stickerId } : null)
+                              }
+                              onStickerPressed={(stickerId) => onStickerPressed({ pageId: item.id, stickerId })}
+                              onTransformChanged={({ stickerId, x, y }) =>
+                                onStickerTransformChanged({ pageId: item.id, stickerId, x, y })
+                              }
+                              onTransformCommitted={({ stickerId, x, y }) =>
+                                onStickerTransformCommitted({ pageId: item.id, stickerId, x, y })
+                              }
+                            />
+                            {renderStickerActionsPopover({ pageId: item.id, stageWidth: stage.width, stageHeight: stage.height })}
+                            {renderTextActionsPopover({ pageId: item.id, stageWidth: stage.width, stageHeight: stage.height })}
+                          </>
+                        )}
                       />
-                      <StickyNotesLayer
-                        notes={notes}
-                        stageWidth={stage.width}
-                        stageHeight={stage.height}
-                        onNotePressed={(noteId) => onNotePressed({ pageId: item.id, noteId })}
-                        onTransformChanged={({ noteId, x, y }) => onNoteTransformChanged({ pageId: item.id, noteId, x, y })}
-                        onTransformCommitted={({ noteId, x, y }) =>
-                          onNoteTransformCommitted({ pageId: item.id, noteId, x, y })
-                        }
-                      />
-                      {renderStickerActionsPopover({ pageId: item.id, stageWidth: stage.width, stageHeight: stage.height })}
-                      {renderNoteActionsPopover({ pageId: item.id, stageWidth: stage.width, stageHeight: stage.height })}
-                    </>
-                  )}
-                />
+                    );
+                  })()}
+                </View>
 
                 {photos.length === 0 ? (
                   <View style={styles.emptyHint}>
@@ -1302,7 +1440,7 @@ export default function ScrapbookViewer() {
           );
         }}
         ListEmptyComponent={
-          <View style={[styles.pageViewport, { width: windowWidth }]}>
+          <View style={[styles.pageViewport, { width: windowWidth, height: '100%' }]}>
             <View style={styles.paperPage}>
               <Text style={styles.pageTitle}>No pages yet</Text>
               <View style={styles.emptyHint}>
@@ -1353,8 +1491,9 @@ export default function ScrapbookViewer() {
             setActiveStickerFor(null);
             setStickerActionsFor(null);
             setConfirmStickerDeleteFor(null);
-            setNoteActionsFor(null);
-            setConfirmDeleteFor(null);
+            setActiveTextFor(null);
+            setTextActionsFor(null);
+            setConfirmTextDeleteFor(null);
           }}
           style={({ pressed }) => [
             styles.button,
@@ -1369,17 +1508,171 @@ export default function ScrapbookViewer() {
         <Pressable
           accessibilityRole="button"
           disabled={!currentPage}
-          onPress={() => void addPostItToCurrentPage()}
+          onPress={() => {
+            setActiveStickerFor(null);
+            setStickerActionsFor(null);
+            setConfirmStickerDeleteFor(null);
+            setActiveTextFor(null);
+            setTextActionsFor(null);
+            setConfirmTextDeleteFor(null);
+            void addTextToCurrentPage();
+          }}
           style={({ pressed }) => [
             styles.button,
-            styles.primaryButton,
+            styles.secondaryButton,
             !currentPage && styles.buttonDisabled,
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={styles.buttonText}>+ Post-it</Text>
+          <Text style={styles.buttonText}>+ Text</Text>
         </Pressable>
       </View>
+
+      <Modal
+        visible={!!textEditorFor}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          // Treat as cancel.
+          const target = textEditorFor;
+          const original = textDraftOriginal;
+          if (target && original && original.pageId === target.pageId && original.textId === target.textId) {
+            applyTextDraftPreview({
+              pageId: target.pageId,
+              textId: target.textId,
+              patch: { text: original.text, font: original.font, color: original.color },
+            });
+          }
+          setTextEditorFor(null);
+          setTextDraft(null);
+          setTextDraftOriginal(null);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Edit text</Text>
+
+            <TextInput
+              value={textDraft?.text ?? ''}
+              onChangeText={(v) => {
+                const target = textEditorFor;
+                setTextDraft((prev) => (prev ? { ...prev, text: v } : { text: v, font: 'hand', color: '#2E2A27' }));
+                if (target) {
+                  applyTextDraftPreview({ pageId: target.pageId, textId: target.textId, patch: { text: v } });
+                }
+              }}
+              placeholder="Write something…"
+              placeholderTextColor="rgba(46,42,39,0.45)"
+              style={styles.modalInput}
+              multiline
+            />
+
+            <View style={styles.detailsSection}>
+              <Text style={styles.actionSectionLabel}>Font</Text>
+              <View style={styles.colorRow}>
+                {TEXT_FONT_OPTIONS.map((o) => {
+                  const active = (textDraft?.font ?? 'hand') === o.font;
+                  return (
+                    <Pressable
+                      key={o.font}
+                      accessibilityRole="button"
+                      onPress={() => {
+                        const target = textEditorFor;
+                        setTextDraft((prev) => (prev ? { ...prev, font: o.font } : prev));
+                        if (target) {
+                          applyTextDraftPreview({ pageId: target.pageId, textId: target.textId, patch: { font: o.font } });
+                        }
+                      }}
+                      style={({ pressed }) => [styles.colorChip, active && styles.moodChipActive, pressed && styles.actionRowPressed]}
+                    >
+                      <Text style={styles.colorChipText}>{o.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.detailsSection}>
+              <Text style={styles.actionSectionLabel}>Color</Text>
+              <View style={styles.colorRow}>
+                {TEXT_COLOR_OPTIONS.map((o) => {
+                  const active = (textDraft?.color ?? '#2E2A27') === o.color;
+                  return (
+                    <Pressable
+                      key={o.color}
+                      accessibilityRole="button"
+                      onPress={() => {
+                        const target = textEditorFor;
+                        setTextDraft((prev) => (prev ? { ...prev, color: o.color } : prev));
+                        if (target) {
+                          applyTextDraftPreview({ pageId: target.pageId, textId: target.textId, patch: { color: o.color } });
+                        }
+                      }}
+                      style={({ pressed }) => [styles.colorChip, active && styles.moodChipActive, pressed && styles.actionRowPressed]}
+                    >
+                      <Text style={styles.colorChipText}>{o.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  const target = textEditorFor;
+                  const original = textDraftOriginal;
+                  if (target && original && original.pageId === target.pageId && original.textId === target.textId) {
+                    applyTextDraftPreview({
+                      pageId: target.pageId,
+                      textId: target.textId,
+                      patch: { text: original.text, font: original.font, color: original.color },
+                    });
+                  }
+
+                  setTextEditorFor(null);
+                  setTextDraft(null);
+                  setTextDraftOriginal(null);
+                }}
+                style={({ pressed }) => [styles.modalButton, styles.secondaryButton, pressed && styles.buttonPressed]}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                disabled={!textEditorFor || !textDraft}
+                onPress={() => {
+                  const target = textEditorFor;
+                  const draft = textDraft;
+                  if (!target || !draft) return;
+                  patchTextOptimistic({
+                    pageId: target.pageId,
+                    textId: target.textId,
+                    patch: {
+                      text: draft.text,
+                      font: draft.font,
+                      color: draft.color,
+                    },
+                  });
+                  setTextEditorFor(null);
+                  setTextDraft(null);
+                  setTextDraftOriginal(null);
+                }}
+                style={({ pressed }) => [
+                  styles.modalButton,
+                  styles.primaryButton,
+                  (!textEditorFor || !textDraft) && styles.buttonDisabled,
+                  pressed && styles.buttonPressed,
+                ]}
+              >
+                <Text style={styles.buttonText}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={detailsOpen} transparent animationType="fade" onRequestClose={() => setDetailsOpen(false)}>
         <View style={styles.modalBackdrop}>
@@ -1586,45 +1879,6 @@ export default function ScrapbookViewer() {
         </View>
       </Modal>
 
-      <Modal
-        visible={!!editingNote}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setEditingNote(null)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Edit note</Text>
-            <TextInput
-              value={editingText}
-              onChangeText={setEditingText}
-              style={styles.modalInput}
-              multiline
-              placeholder="Write something…"
-              placeholderTextColor="rgba(46,42,39,0.45)"
-              autoFocus
-            />
-
-            <View style={styles.modalActions}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setEditingNote(null)}
-                style={({ pressed }) => [styles.modalButton, styles.secondaryButton, pressed && styles.buttonPressed]}
-              >
-                <Text style={styles.buttonText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void saveNoteText()}
-                style={({ pressed }) => [styles.modalButton, styles.primaryButton, pressed && styles.buttonPressed]}
-              >
-                <Text style={styles.buttonText}>Save</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
     </View>
   );
 }
@@ -1672,13 +1926,18 @@ const styles = StyleSheet.create({
   },
   pager: {
     paddingBottom: 90,
+    flexGrow: 1,
+    alignItems: 'stretch',
   },
   pagerList: {
     flex: 1,
+    alignSelf: 'stretch',
   },
   pageViewport: {
     paddingHorizontal: 14,
     paddingVertical: 10,
+    flex: 1,
+    alignSelf: 'stretch',
   },
   paperPage: {
     flex: 1,
@@ -1701,8 +1960,15 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   canvas: {
-    height: 460,
+    flex: 1,
+    minHeight: 280,
     backgroundColor: 'rgba(46,42,39,0.04)',
+  },
+  canvasFrame: {
+    flex: 1,
+    minHeight: Platform.OS === 'web' ? 640 : 280,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   bottomBar: {
     paddingHorizontal: 14,
@@ -1953,7 +2219,7 @@ const styles = StyleSheet.create({
   popover: {
     position: 'absolute',
     borderRadius: 16,
-    padding: 10,
+    padding: 0,
     backgroundColor: PaperColors.paper,
     borderWidth: 1,
     borderColor: PaperColors.borderStrong,
@@ -1963,6 +2229,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
     elevation: 500,
     zIndex: 50000,
+  },
+  popoverScrollContent: {
+    padding: 10,
     gap: 10,
   },
   popoverRow: {

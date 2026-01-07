@@ -6,5 +6,5 @@ export * from "./entryMedia";
 export * from "./scrapbooks";
 export * from "./scrapbookPages";
 export * from "./scrapbookPageMedia";
-export * from "./scrapbookPageNotes";
 export * from "./scrapbookPageStickers";
+export * from "./scrapbookPageTexts";

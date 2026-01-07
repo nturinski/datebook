@@ -126,7 +126,7 @@ function DraggablePhoto(props: {
     const yNorm = typeof photo.y === 'number' ? clamp(photo.y, 0, 1) : 0;
     const { maxX, maxY } = getBounds(scaleRef.current);
     pan.setValue({ x: xNorm * maxX, y: yNorm * maxY });
-  }, [photo.id, photo.x, photo.y, pan]);
+  }, [photo.id, photo.x, photo.y, stageWidth, stageHeight, photoWidth, photoHeight, scale, pan]);
 
   useEffect(() => {
     if (dragging.current || resizing.current) return;
@@ -373,7 +373,7 @@ export function MemoriesCanvas(props: {
   onTransformChanged: (args: { mediaId: string; x: number; y: number; scale: number }) => void;
   onTransformCommitted: (args: { mediaId: string; x: number; y: number; scale: number }) => Promise<void>;
 }) {
-  const { photos, style, basePhotoWidth = 150, renderOverlay, onStagePress, onTransformChanged, onTransformCommitted } = props;
+  const { photos, style, basePhotoWidth, renderOverlay, onStagePress, onTransformChanged, onTransformCommitted } = props;
 
   const [stageSize, setStageSize] = useState<{ width: number; height: number } | null>(null);
   const [activeMediaId, setActiveMediaId] = useState<string | null>(null);
@@ -381,66 +381,96 @@ export function MemoriesCanvas(props: {
   function onStageLayout(e: LayoutChangeEvent) {
     const { width, height } = e.nativeEvent.layout;
     if (!Number.isFinite(width) || !Number.isFinite(height)) return;
-    setStageSize({ width, height });
+    if (width <= 0 || height <= 0) return;
+    setStageSize((prev) => {
+      if (prev && Math.abs(prev.width - width) < 0.5 && Math.abs(prev.height - height) < 0.5) return prev;
+      return { width, height };
+    });
   }
 
   return (
-    <View style={[styles.stage, style]} onLayout={onStageLayout}>
-      {onStagePress ? (
-        <Pressable
-          accessible={false}
-          style={StyleSheet.absoluteFill}
-          onPress={onStagePress}
-        />
-      ) : null}
+    <View style={[styles.stageOuter, style]}>
+      <View style={styles.stageInner} onLayout={onStageLayout}>
+        {onStagePress ? (
+          <Pressable accessible={false} style={StyleSheet.absoluteFill} onPress={onStagePress} />
+        ) : null}
 
-      {stageSize
-        ? photos
-            .filter((m) => m.kind === 'photo' && typeof m.url === 'string' && m.url.length > 0)
-            .map((m) => {
-              const ratio =
-                typeof m.width === 'number' && typeof m.height === 'number' && m.width > 0 && m.height > 0
-                  ? m.width / m.height
-                  : 4 / 3;
+        {stageSize
+          ? photos
+              .filter((m) => m.kind === 'photo' && typeof m.url === 'string' && m.url.length > 0)
+              .map((m) => {
+                const ratio =
+                  typeof m.width === 'number' && typeof m.height === 'number' && m.width > 0 && m.height > 0
+                    ? m.width / m.height
+                    : 4 / 3;
 
-              const photoWidth = basePhotoWidth;
-              const photoHeight = clamp(photoWidth / ratio, 80, 220);
+                // Default sizing is proportional to the stage width so it scales consistently across devices.
+                const resolvedBasePhotoWidth =
+                  typeof basePhotoWidth === 'number' ? basePhotoWidth : clamp(stageSize.width * 0.46, 110, 260);
 
-              const isActive = activeMediaId === m.id;
-              const zIndex = isActive ? 1000 : 1;
+                const photoWidth = resolvedBasePhotoWidth;
+                const photoHeight = clamp(photoWidth / ratio, 80, 280);
 
-              return (
-                <DraggablePhoto
-                  key={m.id}
-                  photo={m}
-                  stageWidth={stageSize.width}
-                  stageHeight={stageSize.height}
-                  photoWidth={photoWidth}
-                  photoHeight={photoHeight}
-                  isActive={isActive}
-                  zIndex={zIndex}
-                  onActivate={(mediaId) => setActiveMediaId(mediaId)}
-                  onTransformChanged={onTransformChanged}
-                  onTransformCommitted={onTransformCommitted}
-                />
-              );
-            })
-        : null}
+                const isActive = activeMediaId === m.id;
+                const zIndex = isActive ? 1000 : 1;
 
-      {stageSize && renderOverlay ? renderOverlay(stageSize) : null}
+                return (
+                  <DraggablePhoto
+                    key={m.id}
+                    photo={m}
+                    stageWidth={stageSize.width}
+                    stageHeight={stageSize.height}
+                    photoWidth={photoWidth}
+                    photoHeight={photoHeight}
+                    isActive={isActive}
+                    zIndex={zIndex}
+                    onActivate={(mediaId) => setActiveMediaId(mediaId)}
+                    onTransformChanged={onTransformChanged}
+                    onTransformCommitted={onTransformCommitted}
+                  />
+                );
+              })
+          : null}
+
+        {stageSize && renderOverlay ? renderOverlay(stageSize) : null}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  stage: {
+  stageOuter: {
     width: '100%',
-    height: 360,
+    height: '100%',
+    minHeight: 280,
+    borderRadius: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: Platform.OS === 'android' ? 6 : 0,
+  },
+  stageInner: {
+    position: 'relative',
+    flex: 1,
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: 'rgba(46,42,39,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.96)',
     borderWidth: 1,
-    borderColor: 'rgba(46,42,39,0.10)',
+    borderColor: 'rgba(46,42,39,0.18)',
+    // Important: no elevation here. On Android, elevation + overflow:hidden breaks clipping,
+    // which can allow children to render outside the rounded bounds.
+
+    // Also important on Android: when children are transformed (Animated translate/rotate/scale),
+    // overflow clipping can intermittently fail unless the parent is rendered via an offscreen surface.
+    // These flags improve reliability at the cost of a small perf overhead.
+    ...(Platform.OS === 'android'
+      ? {
+          renderToHardwareTextureAndroid: true,
+          needsOffscreenAlphaCompositing: true,
+        }
+      : {}),
+    ...(Platform.OS === 'ios' ? { shouldRasterizeIOS: true } : {}),
   },
   draggablePhoto: {
     position: 'absolute',

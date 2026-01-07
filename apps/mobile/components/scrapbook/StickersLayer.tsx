@@ -15,11 +15,30 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+// Base sticker size is proportional to the current canvas width so the layout feels consistent across devices.
+// For an A4 "paper" stage (width ~= 0.707 * height), this lands very close to the previous 72px default.
+export function getStickerBaseSizePx(stageWidth: number): number {
+  if (!Number.isFinite(stageWidth) || stageWidth <= 0) return 72;
+  return clamp(stageWidth * 0.22, 44, 120);
+}
+
+// Back-compat constant (previous fixed base size).
 export const STICKER_BASE_SIZE = 72;
+
+const STICKER_MIN_VISIBLE_PX = 16;
 
 // Stickers live above photos but below sticky notes.
 const STICKERS_Z_BASE = 5000;
 const STICKERS_ELEVATION_BASE = 50;
+
+type StickerBounds = {
+  insideMaxX: number;
+  insideMaxY: number;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
 
 export function stickerEmoji(kind: ScrapbookStickerKind): string {
   switch (kind) {
@@ -98,13 +117,23 @@ function DraggableSticker(props: {
     scaleRef.current = typeof sticker.scale === 'number' ? sticker.scale : 1;
   }, [sticker.scale]);
 
-  function getBounds(forScale: number): { maxX: number; maxY: number } {
+  function getBounds(forScale: number): StickerBounds {
     const stage = stageRef.current;
-    const size = STICKER_BASE_SIZE * clamp(forScale, 0.25, 4);
-    return {
-      maxX: Math.max(0, stage.width - size),
-      maxY: Math.max(0, stage.height - size),
-    };
+    const base = getStickerBaseSizePx(stage.width);
+    const size = base * clamp(forScale, 0.25, 4);
+
+    // Old (fully-inside) range, used for normalization so existing saved stickers don't shift.
+    const insideMaxX = Math.max(0, stage.width - size);
+    const insideMaxY = Math.max(0, stage.height - size);
+
+    // Allow the sticker to hang off the page while keeping at least a small corner visible.
+    const visible = Math.min(STICKER_MIN_VISIBLE_PX, Math.max(6, size * 0.25));
+    const minX = -Math.max(0, size - visible);
+    const minY = -Math.max(0, size - visible);
+    const maxX = Math.max(minX, stage.width - visible);
+    const maxY = Math.max(minY, stage.height - visible);
+
+    return { insideMaxX, insideMaxY, minX, minY, maxX, maxY };
   }
 
   function getPanValue(): { x: number; y: number } {
@@ -115,32 +144,36 @@ function DraggableSticker(props: {
   }
 
   function clampPanToStage() {
-    const { maxX, maxY } = getBounds(scaleRef.current);
+    const { minX, minY, maxX, maxY } = getBounds(scaleRef.current);
     const cur = getPanValue();
-    const xPx = clamp(cur.x, 0, maxX);
-    const yPx = clamp(cur.y, 0, maxY);
+    const xPx = clamp(cur.x, minX, maxX);
+    const yPx = clamp(cur.y, minY, maxY);
     if (xPx !== cur.x || yPx !== cur.y) {
       pan.setValue({ x: xPx, y: yPx });
     }
   }
 
   function computeNormalized(): { x: number; y: number } {
-    const { maxX, maxY } = getBounds(scaleRef.current);
+    const { insideMaxX, insideMaxY, minX, minY, maxX, maxY } = getBounds(scaleRef.current);
     const cur = getPanValue();
-    const xPx = clamp(cur.x, 0, maxX);
-    const yPx = clamp(cur.y, 0, maxY);
+    const xPx = clamp(cur.x, minX, maxX);
+    const yPx = clamp(cur.y, minY, maxY);
     return {
-      x: maxX === 0 ? 0 : xPx / maxX,
-      y: maxY === 0 ? 0 : yPx / maxY,
+      // Backward compatible normalization: 1.0 still means "fully at the right/bottom edge".
+      // Values can go <0 or >1 when hanging off the page.
+      x: insideMaxX === 0 ? 0 : xPx / insideMaxX,
+      y: insideMaxY === 0 ? 0 : yPx / insideMaxY,
     };
   }
 
   useEffect(() => {
     if (dragging.current) return;
-    const xNorm = typeof sticker.x === 'number' ? clamp(sticker.x, 0, 1) : 0;
-    const yNorm = typeof sticker.y === 'number' ? clamp(sticker.y, 0, 1) : 0;
-    const { maxX, maxY } = getBounds(scaleRef.current);
-    pan.setValue({ x: xNorm * maxX, y: yNorm * maxY });
+    const xNorm = typeof sticker.x === 'number' ? sticker.x : 0;
+    const yNorm = typeof sticker.y === 'number' ? sticker.y : 0;
+    const { insideMaxX, insideMaxY, minX, minY, maxX, maxY } = getBounds(scaleRef.current);
+    const xPx = clamp(xNorm * insideMaxX, minX, maxX);
+    const yPx = clamp(yNorm * insideMaxY, minY, maxY);
+    pan.setValue({ x: xPx, y: yPx });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sticker.id, sticker.x, sticker.y]);
 
@@ -159,9 +192,9 @@ function DraggableSticker(props: {
         },
         onPanResponderMove: (_evt, gesture) => {
           if (!dragging.current) return;
-          const { maxX, maxY } = getBounds(scaleRef.current);
-          const nextX = clamp(start.current.x + gesture.dx, 0, maxX);
-          const nextY = clamp(start.current.y + gesture.dy, 0, maxY);
+          const { minX, minY, maxX, maxY } = getBounds(scaleRef.current);
+          const nextX = clamp(start.current.x + gesture.dx, minX, maxX);
+          const nextY = clamp(start.current.y + gesture.dy, minY, maxY);
           pan.setValue({ x: nextX, y: nextY });
           didMove.current = true;
         },
@@ -184,17 +217,18 @@ function DraggableSticker(props: {
           if (sticker.kind === 'tape') {
             const stage = stageRef.current;
             const scale = clamp(scaleRef.current, 0.25, 4);
-            const size = STICKER_BASE_SIZE * scale;
-            const { maxX, maxY } = getBounds(scale);
+            const base = getStickerBaseSizePx(stage.width);
+            const size = base * scale;
+            const { insideMaxX, insideMaxY } = getBounds(scale);
             const cur = getPanValue();
-            const xPx = clamp(cur.x, 0, maxX);
-            const yPx = clamp(cur.y, 0, maxY);
+            const xPx = cur.x;
+            const yPx = cur.y;
 
             const corners = [
               { x: 0, y: 0 },
-              { x: maxX, y: 0 },
-              { x: 0, y: maxY },
-              { x: maxX, y: maxY },
+              { x: insideMaxX, y: 0 },
+              { x: 0, y: insideMaxY },
+              { x: insideMaxX, y: insideMaxY },
             ];
 
             let best = corners[0];
@@ -227,7 +261,8 @@ function DraggableSticker(props: {
   );
 
   const scale = clamp(typeof sticker.scale === 'number' ? sticker.scale : 1, 0.25, 4);
-  const size = STICKER_BASE_SIZE * scale;
+  const base = getStickerBaseSizePx(stageWidth);
+  const size = base * scale;
   const rotation = typeof sticker.rotation === 'number' ? sticker.rotation : 0;
   const emoji = stickerEmoji(sticker.kind);
 

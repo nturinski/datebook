@@ -27,9 +27,13 @@ export function SignInScreen({ onSignedIn }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"google" | "apple" | null>(null);
 
-  // Expo Go cannot use the Google "installed app" redirect URI reliably.
-  // Use the AuthSession proxy redirect instead.
+  // In Expo Go, custom-scheme redirects are not reliable.
+  // Additionally, Android dev builds are often not configured to handle Google's
+  // `com.googleusercontent.apps.<id>:/oauthredirect` scheme, which results in the
+  // browser getting stuck on "Please wait" and then falling back to Google.
+  // Using the AuthSession proxy avoids both issues.
   const isExpoGo = Constants.appOwnership === "expo";
+  const useProxy = isExpoGo || (__DEV__ && Platform.OS === "android");
 
   function googleRedirectUriForClientId(clientId: string | undefined): string | undefined {
     if (!clientId) return undefined;
@@ -42,9 +46,9 @@ export function SignInScreen({ onSignedIn }: Props) {
   }
 
   const redirectUri = useMemo(() => {
-    if (isExpoGo) {
+    if (useProxy) {
       // e.g. https://auth.expo.io/@velikriss/datebook/oauthredirect
-      return AuthSession.getRedirectUrl("oauthredirect");
+      return makeRedirectUri({ path: "oauthredirect", useProxy: true });
     }
 
     const native = Platform.select({
@@ -58,37 +62,34 @@ export function SignInScreen({ onSignedIn }: Props) {
       path: "oauthredirect",
       native,
     });
-  }, [isExpoGo]);
+  }, [useProxy]);
 
   // You MUST set these in app config / env for your platforms.
-  const googleConfig = useMemo(
-    () => {
-      const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+  const googleConfig = useMemo(() => {
+    const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 
-      // Force the account chooser every time. Otherwise the system browser
-      // session may silently reuse the last signed-in Google user.
-      const extraParams = {
-        // Google OAuth supports space-separated values, e.g. "select_account consent".
-        prompt: "select_account",
-      } as const;
+    // Force the account chooser every time. Otherwise the system browser
+    // session may silently reuse the last signed-in Google user.
+    const extraParams = {
+      // Google OAuth supports space-separated values, e.g. "select_account consent".
+      prompt: "select_account",
+    } as const;
 
-      // In Expo Go, force the Web client id (proxy redirect). Otherwise, use native client ids.
-      return isExpoGo
-        ? {
-            clientId: webClientId,
-            redirectUri,
-            extraParams,
-          }
-        : {
-            iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-            androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-            webClientId,
-            redirectUri,
-            extraParams,
-          };
-    },
-    [redirectUri, isExpoGo]
-  );
+    return {
+      // Used by the AuthSession proxy (Expo Go, and our Android dev fallback).
+      expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID,
+
+      // Used by native flows (standalone/dev-client).
+      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+      androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+
+      // Used on web.
+      webClientId,
+
+      redirectUri,
+      extraParams,
+    };
+  }, [redirectUri]);
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest(googleConfig);
 
@@ -121,7 +122,7 @@ export function SignInScreen({ onSignedIn }: Props) {
       setError(null);
       // iOS: ask for an ephemeral browser session to avoid reusing cookies.
       // Other platforms ignore this option.
-      await promptAsync({ preferEphemeralSession: true });
+      await promptAsync({ preferEphemeralSession: true, useProxy });
     } catch (e: any) {
       setError(e?.message ?? "Google sign-in failed.");
       setBusy(null);
@@ -226,7 +227,7 @@ export function SignInScreen({ onSignedIn }: Props) {
 
           {__DEV__ ? (
             <Text style={styles.footerText}>
-              OAuth redirect: {redirectUri}
+              OAuth redirect: {redirectUri} (proxy={String(useProxy)})
             </Text>
           ) : null}
         </View>
