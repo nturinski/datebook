@@ -39,5 +39,5 @@
     "typescript": "~5.9.2",
     "typescript-eslint": "^8.20.0"
   },
-  "main": "dist/src/{index.js,functions/*.js}"
+  "main": "dist/src/index.js"
 }

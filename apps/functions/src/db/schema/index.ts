@@ -9,3 +9,4 @@ export * from "./scrapbookPages";
 export * from "./scrapbookPageMedia";
 export * from "./scrapbookPageStickers";
 export * from "./scrapbookPageTexts";
+export * from "./quests";

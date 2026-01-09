@@ -10,6 +10,9 @@ import { relationshipMembers } from "../db/schema/relationships";
 import { scrapbooks } from "../db/schema/scrapbooks";
 import { scrapbookPages } from "../db/schema/scrapbookPages";
 import { createReadUrl } from "../lib/mediaStorage";
+import { applyQuestEvent } from "../lib/questEvents";
+import { sendQuestCompletedPushToRelationship } from "../lib/questNotifications";
+import { sendPushToRelationshipMembers } from "../lib/relationshipPush";
 
 const CreateScrapbookBodySchema = z.object({
   relationshipId: z.string().uuid(),
@@ -105,29 +108,66 @@ app.http("scrapbooks", {
           }
         }
 
-        const inserted = await db
-          .insert(scrapbooks)
-          .values({
+        const { scrapbook: s, questCompleted } = await db.transaction(async (tx) => {
+          const inserted = await tx
+            .insert(scrapbooks)
+            .values({
+              relationshipId: member.relationshipId,
+              createdByUserId: member.userId,
+              title,
+              coverBlobKey: coverBlobKey ?? null,
+              coverWidth: typeof coverWidth === "number" ? coverWidth : null,
+              coverHeight: typeof coverHeight === "number" ? coverHeight : null,
+              updatedAt: new Date(),
+            })
+            .returning({
+              id: scrapbooks.id,
+              relationshipId: scrapbooks.relationshipId,
+              title: scrapbooks.title,
+              coverBlobKey: scrapbooks.coverBlobKey,
+              coverWidth: scrapbooks.coverWidth,
+              coverHeight: scrapbooks.coverHeight,
+              createdAt: scrapbooks.createdAt,
+              updatedAt: scrapbooks.updatedAt,
+            });
+
+          const row = inserted[0]!;
+
+          const questRes = await applyQuestEvent({
+            db: tx,
             relationshipId: member.relationshipId,
-            createdByUserId: member.userId,
-            title,
-            coverBlobKey: coverBlobKey ?? null,
-            coverWidth: typeof coverWidth === "number" ? coverWidth : null,
-            coverHeight: typeof coverHeight === "number" ? coverHeight : null,
-            updatedAt: new Date(),
-          })
-          .returning({
-            id: scrapbooks.id,
-            relationshipId: scrapbooks.relationshipId,
-            title: scrapbooks.title,
-            coverBlobKey: scrapbooks.coverBlobKey,
-            coverWidth: scrapbooks.coverWidth,
-            coverHeight: scrapbooks.coverHeight,
-            createdAt: scrapbooks.createdAt,
-            updatedAt: scrapbooks.updatedAt,
+            actorUserId: member.userId,
+            eventType: "SCRAPBOOK_ENTRY_CREATED",
+            occurredAt: row.createdAt,
+            ctx,
           });
 
-        const s = inserted[0]!;
+          return { scrapbook: row, questCompleted: questRes.newlyCompleted };
+        });
+
+        // Best-effort push: notify the other member(s) that a scrapbook entry was added.
+        await sendPushToRelationshipMembers({
+          db,
+          relationshipId: member.relationshipId,
+          excludeUserId: member.userId,
+          body: `New scrapbook entry: ${s.title} ✨`,
+          data: {
+            kind: "scrapbook.created",
+            scrapbookId: s.id,
+            relationshipId: member.relationshipId,
+          },
+          ctx,
+        });
+
+        // Best-effort push: if a shared quest was completed, notify everyone.
+        if (questCompleted.length > 0) {
+          await sendQuestCompletedPushToRelationship({
+            db,
+            relationshipId: member.relationshipId,
+            questTemplateId: questCompleted[0]!.questTemplateId,
+            ctx,
+          });
+        }
 
         return {
           status: 201,

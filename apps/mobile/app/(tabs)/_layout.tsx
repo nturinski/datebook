@@ -2,7 +2,6 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { PaperColors } from '@/constants/paper';
@@ -32,14 +31,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
-
-      <Tabs.Screen
         name="scrapbooks"
         options={{
           title: 'Scrapbooks',
@@ -55,6 +46,16 @@ export default function TabLayout() {
           title: 'Coupons',
           tabBarIcon: ({ color, focused, size }) => (
             <FontAwesome name={focused ? 'ticket' : 'ticket'} size={size ?? 28} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="quests"
+        options={{
+          title: 'Quests',
+          tabBarIcon: ({ color, focused, size }) => (
+            <FontAwesome name={focused ? 'star' : 'star-o'} size={size ?? 28} color={color} />
           ),
         }}
       />
