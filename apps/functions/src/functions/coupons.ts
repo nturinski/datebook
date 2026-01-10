@@ -11,6 +11,10 @@ import { users } from "../db/schema/users";
 import { corsHeaders, handleCorsPreflight } from "../lib/cors";
 import { sendExpoPushNotification } from "../lib/expoPush";
 
+import { applyQuestEvent } from "../lib/questEvents";
+import { sendQuestCompletedPushToRelationship } from "../lib/questNotifications";
+
+
 const CreateCouponBodySchema = z.object({
   relationshipId: z.string().uuid(),
   recipientUserId: z.string().uuid(),
@@ -107,35 +111,58 @@ app.http("coupons", {
           };
         }
 
-        const inserted = await db
-          .insert(coupons)
-          .values({
+        const { coupon: c, questCompleted } = await db.transaction(async (tx) => {
+          const inserted = await tx
+            .insert(coupons)
+            .values({
+              relationshipId: member.relationshipId,
+              issuerUserId: member.userId,
+              recipientUserId,
+              title,
+              description: typeof description === "string" ? description : null,
+              templateId,
+              expiresAt: expiresAtDate,
+              // status defaults to ACTIVE in schema/db
+              updatedAt: now,
+            })
+            .returning({
+              id: coupons.id,
+              relationshipId: coupons.relationshipId,
+              issuerUserId: coupons.issuerUserId,
+              recipientUserId: coupons.recipientUserId,
+              title: coupons.title,
+              description: coupons.description,
+              templateId: coupons.templateId,
+              expiresAt: coupons.expiresAt,
+              status: coupons.status,
+              redeemedAt: coupons.redeemedAt,
+              createdAt: coupons.createdAt,
+              updatedAt: coupons.updatedAt,
+            });
+
+          const row = inserted[0]!;
+
+          const questRes = await applyQuestEvent({
+            db: tx,
             relationshipId: member.relationshipId,
-            issuerUserId: member.userId,
-            recipientUserId,
-            title,
-            description: typeof description === "string" ? description : null,
-            templateId,
-            expiresAt: expiresAtDate,
-            // status defaults to ACTIVE in schema/db
-            updatedAt: now,
-          })
-          .returning({
-            id: coupons.id,
-            relationshipId: coupons.relationshipId,
-            issuerUserId: coupons.issuerUserId,
-            recipientUserId: coupons.recipientUserId,
-            title: coupons.title,
-            description: coupons.description,
-            templateId: coupons.templateId,
-            expiresAt: coupons.expiresAt,
-            status: coupons.status,
-            redeemedAt: coupons.redeemedAt,
-            createdAt: coupons.createdAt,
-            updatedAt: coupons.updatedAt,
+            actorUserId: member.userId,
+            eventType: "COUPON_CREATED",
+            occurredAt: row.createdAt,
+            ctx,
           });
 
-        const c = inserted[0]!;
+          return { coupon: row, questCompleted: questRes.newlyCompleted };
+        });
+
+        // Best-effort push: if a shared quest was completed, notify everyone.
+        if (questCompleted.length > 0) {
+          await sendQuestCompletedPushToRelationship({
+            db,
+            relationshipId: member.relationshipId,
+            questTemplateId: questCompleted[0]!.questTemplateId,
+            ctx,
+          });
+        }
 
         // Best-effort push: notify the recipient.
         try {
@@ -149,7 +176,7 @@ app.http("coupons", {
           if (token) {
             const sent = await sendExpoPushNotification({
               to: token,
-              body: "You received a coupon ✨",
+              body: "A coupon for you ✨",
               data: { kind: "coupon.created", couponId: c.id },
             });
             if (sent.ok === false) {

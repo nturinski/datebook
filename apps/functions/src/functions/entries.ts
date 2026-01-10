@@ -10,6 +10,7 @@ import { corsHeaders, handleCorsPreflight } from "../lib/cors";
 import { requireRelationshipMember, requireRelationshipMemberFromRequest } from "../auth/requireRelationshipMember";
 import { requireAuth } from "../auth/requireAuth";
 import { createReadUrl } from "../lib/mediaStorage";
+import { sendPushToRelationshipMembers } from "../lib/relationshipPush";
 
 function isDevDiagnosticsEnabled(): boolean {
   // DEV_ADMIN_MODE is already used in this repo for dev-only behavior.
@@ -27,6 +28,19 @@ function tryGetDatabaseHost(): string | null {
   }
 }
 
+function tryGetErrorDetails(err: unknown): { causeMessage?: string; code?: unknown } {
+  if (typeof err !== "object" || err === null) return {};
+  const errObj = err as Record<string, unknown>;
+
+  const rawCause = errObj.cause;
+  const causeObj = typeof rawCause === "object" && rawCause !== null ? (rawCause as Record<string, unknown>) : null;
+
+  const causeMessage = typeof causeObj?.message === "string" ? causeObj.message : undefined;
+  const code = (causeObj?.code ?? errObj.code) as unknown;
+
+  return { causeMessage, code };
+}
+
 function classifyHttpError(err: unknown): { status: number; message: string; details?: unknown } {
   const message = err instanceof Error ? err.message : String(err);
 
@@ -42,12 +56,13 @@ function classifyHttpError(err: unknown): { status: number; message: string; det
   }
 
   // Everything else is assumed to be a server error.
+  const detailsFromError = tryGetErrorDetails(err);
   const details = isDevDiagnosticsEnabled()
     ? {
         message,
         // Drizzle often wraps the underlying Postgres error in `cause`.
-        cause: (err as any)?.cause?.message,
-        code: (err as any)?.cause?.code ?? (err as any)?.code,
+        cause: detailsFromError.causeMessage,
+        code: detailsFromError.code,
         dbHost: tryGetDatabaseHost(),
       }
     : undefined;
@@ -66,6 +81,49 @@ function parseIsoDateTime(value: string): Date {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) throw new Error("Invalid datetime format (expected ISO 8601)");
   return d;
+}
+
+async function sendEntryCreatedPush(args: {
+  relationshipId: string;
+  actorUserId: string;
+  entryId: string;
+  title: string;
+  ctx: InvocationContext;
+}): Promise<void> {
+  await sendPushToRelationshipMembers({
+    db,
+    relationshipId: args.relationshipId,
+    excludeUserId: args.actorUserId,
+    body: `New entry: ${args.title} ✨`,
+    data: { kind: "entry.created", relationshipId: args.relationshipId, entryId: args.entryId },
+    ctx: args.ctx,
+  });
+}
+
+async function sendEntryUpdatedPushIfMeaningful(args: {
+  relationshipId: string;
+  actorUserId: string;
+  entryId: string;
+  previous: { title: string; body: string | null; occurredAt: Date };
+  next: { title: string; body: string | null; occurredAt: Date };
+  ctx: InvocationContext;
+}): Promise<void> {
+  const titleChanged = args.previous.title !== args.next.title;
+  const bodyChanged = (args.previous.body ?? null) !== (args.next.body ?? null);
+  const occurredAtChanged = args.previous.occurredAt.getTime() !== args.next.occurredAt.getTime();
+
+  const meaningful = titleChanged || bodyChanged || occurredAtChanged;
+  if (!meaningful) return;
+
+  await sendPushToRelationshipMembers({
+    db,
+    relationshipId: args.relationshipId,
+    excludeUserId: args.actorUserId,
+    body: `Updated: ${args.next.title} ✨`,
+    data: { kind: "entry.updated", relationshipId: args.relationshipId, entryId: args.entryId },
+    cooldown: { key: `entry.updated:${args.entryId}`, ms: 5 * 60 * 1000 },
+    ctx: args.ctx,
+  });
 }
 
 const CreateBodySchema = z
@@ -153,6 +211,15 @@ app.http("relationshipEntries", {
             createdAt: entries.createdAt,
             updatedAt: entries.updatedAt,
           });
+
+        // Best-effort push: notify the other member(s) that an entry was created.
+        await sendEntryCreatedPush({
+          relationshipId: member.relationshipId,
+          actorUserId: member.userId,
+          entryId: inserted[0]!.id,
+          title: inserted[0]!.title,
+          ctx,
+        });
 
         return {
           status: 201,
@@ -258,6 +325,15 @@ app.http("entries", {
             createdAt: entries.createdAt,
             updatedAt: entries.updatedAt,
           });
+
+        // Best-effort push: notify the other member(s) that an entry was created.
+        await sendEntryCreatedPush({
+          relationshipId: member.relationshipId,
+          actorUserId: member.userId,
+          entryId: inserted[0]!.id,
+          title: inserted[0]!.title,
+          ctx,
+        });
 
         return {
           status: 201,
@@ -406,6 +482,16 @@ app.http("entryById", {
         });
 
         if (!entry) return { status: 404, headers: corsHeaders(req), jsonBody: { ok: false, error: "Not found" } };
+
+        // Best-effort push: notify the other member(s) that an entry was updated.
+        await sendEntryUpdatedPushIfMeaningful({
+          relationshipId: member.relationshipId,
+          actorUserId: member.userId,
+          entryId: entry.id,
+          previous: { title: existing.title, body: existing.body, occurredAt: existing.occurredAt },
+          next: { title: entry.title, body: entry.body, occurredAt: entry.occurredAt },
+          ctx,
+        });
 
         return { status: 200, headers: corsHeaders(req), jsonBody: { ok: true, entry } };
       }
